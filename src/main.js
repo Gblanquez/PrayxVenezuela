@@ -4,3 +4,4 @@ import prayScene from './sketch/sketch'
 
 initDonationCheckout()
 prayScene.mount()
+

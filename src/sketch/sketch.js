@@ -3,11 +3,11 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
 import GUI from 'lil-gui'
 import { createRagingSeaMaterial } from './materials/ragingSeaMaterial'
-import { PRAY_GLB_BASE64 } from './models/prayModelData'
+import prayModelUrl from '../static/pray.glb?url'
 
 const defaultSelector = '.canvas-wrapper'
 const dracoDecoderUrl = 'https://www.gstatic.com/draco/v1/decoders/'
-const storageKey = 'prayx-venezuela-scene-config-v2'
+const storageKey = 'prayx-venezuela-scene-config-v3'
 
 class PrayScene {
 	constructor() {
@@ -18,6 +18,7 @@ class PrayScene {
 		this.model = null
 		this.sceneGroup = null
 		this.modelGroup = null
+		this.videoGroup = null
 		this.videoElement = null
 		this.videoTexture = null
 		this.videoMaterial = null
@@ -30,6 +31,8 @@ class PrayScene {
 		this.volumetricTexture = null
 		this.volumetricSpotLight = null
 		this.volumetricSpotLightTarget = null
+		this.spotLight = null
+		this.spotLightTarget = null
 		this.voidBackdrop = null
 		this.voidBackdropMaterial = null
 		this.rainGroup = null
@@ -38,6 +41,16 @@ class PrayScene {
 		this.rainMaterial = null
 		this.rainDrops = []
 		this.rainDummy = new THREE.Object3D()
+		this.rainRippleIndex = 0
+		this.rainRippleVectors = Array.from({ length: 16 }, () => new THREE.Vector3(0, 0, -1000))
+		this.holderImpactMesh = null
+		this.holderImpactGeometry = null
+		this.holderImpactMaterial = null
+		this.holderImpacts = []
+		this.holderImpactIndex = 0
+		this.holderImpactDummy = new THREE.Object3D()
+		this.floorBounds = new THREE.Box3()
+		this.videoGroupBounds = new THREE.Box3()
 		this.meshScaleBases = new Map()
 		this.meshPositionBases = new Map()
 		this.loader = null
@@ -62,18 +75,20 @@ class PrayScene {
 			voidOpacity: 0.57,
 			voidScale: 24,
 			voidZ: -8,
-			groupX: 0.0199999999999996,
+			groupX: 0,
 			groupY: 0,
-			groupZ: -15,
-			groupRotationY: 0.438407346410207,
+			groupZ: 0,
+			groupRotationY: 0,
 			groupScale: 1,
-			videoMeshX: -11.92,
-			videoMeshY: 28.48,
-			videoMeshZ: -30,
-			videoMeshScale: 16.09,
+			videoMeshX: 0,
+			videoMeshY: 0,
+			videoMeshZ: 0,
+			videoMeshRotationY: 0,
+			videoMeshScale: 1,
 			videoOpacity: 0.988,
 			videoEmissiveIntensity: 0.14,
 			videoGrayscale: 1,
+			videoRotation: Math.PI,
 			videoToneMapped: true,
 			floorX: 7.26,
 			floorY: 0.25,
@@ -123,6 +138,19 @@ class PrayScene {
 			volumetricSpotDistance: 9.68,
 			volumetricSpotAngle: 1.2,
 			volumetricSpotPenumbra: 1,
+			spotLightEnabled: true,
+			spotLightColor: '#ffffff',
+			spotLightIntensity: 3.5,
+			spotLightDistance: 18,
+			spotLightAngle: Math.PI / 4,
+			spotLightPenumbra: 0.72,
+			spotLightDecay: 1.5,
+			spotLightX: 0,
+			spotLightY: 5,
+			spotLightZ: 4,
+			spotLightTargetX: 0,
+			spotLightTargetY: 0,
+			spotLightTargetZ: 0,
 			rainEnabled: true,
 			rainCount: 2500,
 			rainColor: '#b9dfff',
@@ -135,6 +163,16 @@ class PrayScene {
 			rainSpreadZ: 12,
 			rainWindX: -0.16,
 			rainWindZ: 0.0800000000000001,
+			rainRippleEnabled: true,
+			rainRippleStrength: 0.045,
+			rainRippleRadius: 0.22,
+			rainRippleSpeed: 1.55,
+			rainRippleFade: 1.25,
+			holderImpactEnabled: true,
+			holderImpactColor: '#d8f2ff',
+			holderImpactOpacity: 0.42,
+			holderImpactSize: 0.085,
+			holderImpactFade: 0.34,
 		})
 
 		this.handlePointerMove = this.handlePointerMove.bind(this)
@@ -195,6 +233,7 @@ class PrayScene {
 		this.createVoidBackdrop()
 		this.createVolumetricLights()
 		this.createRain()
+		this.createHolderImpacts()
 		this.createRenderer()
 		this.setupLoader()
 		this.setupGui()
@@ -211,6 +250,22 @@ class PrayScene {
 		fillLight.position.set(-2.5, -1.5, 3)
 
 		this.scene.add(ambientLight, keyLight, rimLight, fillLight)
+		this.createSceneSpotLight()
+	}
+
+	createSceneSpotLight() {
+		this.spotLight = new THREE.SpotLight(
+			this.parameters.spotLightColor,
+			this.parameters.spotLightIntensity,
+			this.parameters.spotLightDistance,
+			this.parameters.spotLightAngle,
+			this.parameters.spotLightPenumbra,
+			this.parameters.spotLightDecay,
+		)
+		this.spotLightTarget = new THREE.Object3D()
+		this.scene.add(this.spotLight, this.spotLightTarget)
+		this.spotLight.target = this.spotLightTarget
+		this.updateSceneSpotLight()
 	}
 
 	createVolumetricLights() {
@@ -252,22 +307,36 @@ class PrayScene {
 		canvas.width = size
 		canvas.height = size
 		const context = canvas.getContext('2d')
-		const gradient = context.createRadialGradient(
+		const softGlow = context.createRadialGradient(
 			size * 0.5,
-			size * 0.42,
-			0,
+			size * 0.46,
+			size * 0.04,
 			size * 0.5,
 			size * 0.5,
-			size * 0.52,
+			size * 0.78,
 		)
 
-		gradient.addColorStop(0, 'rgba(255, 255, 255, 0.58)')
-		gradient.addColorStop(0.24, 'rgba(255, 255, 255, 0.22)')
-		gradient.addColorStop(0.56, 'rgba(255, 255, 255, 0.07)')
-		gradient.addColorStop(1, 'rgba(255, 255, 255, 0)')
+		softGlow.addColorStop(0, 'rgba(255, 255, 255, 0.42)')
+		softGlow.addColorStop(0.18, 'rgba(255, 255, 255, 0.25)')
+		softGlow.addColorStop(0.42, 'rgba(255, 255, 255, 0.11)')
+		softGlow.addColorStop(0.72, 'rgba(255, 255, 255, 0.025)')
+		softGlow.addColorStop(1, 'rgba(255, 255, 255, 0)')
 
-		context.fillStyle = gradient
+		context.filter = 'blur(18px)'
+		context.fillStyle = softGlow
+		context.fillRect(-size * 0.12, -size * 0.12, size * 1.24, size * 1.24)
+		context.filter = 'none'
+
+		const haze = context.createLinearGradient(0, 0, 0, size)
+		haze.addColorStop(0, 'rgba(255, 255, 255, 0)')
+		haze.addColorStop(0.35, 'rgba(255, 255, 255, 0.055)')
+		haze.addColorStop(0.62, 'rgba(255, 255, 255, 0.035)')
+		haze.addColorStop(1, 'rgba(255, 255, 255, 0)')
+
+		context.globalCompositeOperation = 'lighter'
+		context.fillStyle = haze
 		context.fillRect(0, 0, size, size)
+		context.globalCompositeOperation = 'source-over'
 
 		const texture = new THREE.CanvasTexture(canvas)
 		texture.colorSpace = THREE.SRGBColorSpace
@@ -321,6 +390,38 @@ class PrayScene {
 		this.scene.add(this.rainGroup)
 		this.updateRainSettings()
 		this.updateRain(0, 0)
+	}
+
+	createHolderImpacts() {
+		const count = 72
+
+		this.holderImpactGeometry = new THREE.SphereGeometry(1, 8, 6)
+		this.holderImpactMaterial = new THREE.MeshBasicMaterial({
+			color: new THREE.Color(this.parameters.holderImpactColor),
+			transparent: true,
+			opacity: this.parameters.holderImpactOpacity,
+			depthWrite: false,
+			blending: THREE.AdditiveBlending,
+		})
+		this.holderImpactMesh = new THREE.InstancedMesh(
+			this.holderImpactGeometry,
+			this.holderImpactMaterial,
+			count,
+		)
+		this.holderImpactMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+		this.holderImpactMesh.frustumCulled = false
+		this.holderImpactMesh.visible = this.parameters.holderImpactEnabled
+		this.holderImpacts = Array.from({ length: count }, () => ({
+			active: false,
+			x: 0,
+			y: 0,
+			z: 0,
+			time: -1000,
+			scale: 0,
+		}))
+
+		this.scene.add(this.holderImpactMesh)
+		this.updateHolderImpacts(0)
 	}
 
 	seededRandom(seed) {
@@ -405,23 +506,27 @@ class PrayScene {
 			.name('Scale')
 			.onChange(() => this.updateSceneGroupScale())
 
-		const videoMeshFolder = this.gui.addFolder('Video Mesh')
+		const videoMeshFolder = this.gui.addFolder('Video Group')
 		videoMeshFolder
 			.add(this.parameters, 'videoMeshX', -15, 15, 0.01)
 			.name('Position X')
-			.onChange(() => this.updateMeshPosition('video-mesh', 'videoMesh'))
+			.onChange(() => this.updateVideoGroupPosition())
 		videoMeshFolder
 			.add(this.parameters, 'videoMeshY', -30, 30, 0.01)
 			.name('Position Y')
-			.onChange(() => this.updateMeshPosition('video-mesh', 'videoMesh'))
+			.onChange(() => this.updateVideoGroupPosition())
 		videoMeshFolder
 			.add(this.parameters, 'videoMeshZ', -30, 30, 0.01)
 			.name('Position Z')
-			.onChange(() => this.updateMeshPosition('video-mesh', 'videoMesh'))
+			.onChange(() => this.updateVideoGroupPosition())
+		videoMeshFolder
+			.add(this.parameters, 'videoMeshRotationY', -Math.PI, Math.PI, 0.01)
+			.name('Rotation Y')
+			.onChange(() => this.updateVideoGroupRotation())
 		videoMeshFolder
 			.add(this.parameters, 'videoMeshScale', 0.1, 20, 0.01)
 			.name('Scale')
-			.onChange(() => this.updateMeshScale('video-mesh', this.parameters.videoMeshScale))
+			.onChange(() => this.updateVideoGroupScale())
 		videoMeshFolder
 			.add(this.parameters, 'videoOpacity', 0, 1, 0.001)
 			.name('Video Opacity')
@@ -433,6 +538,10 @@ class PrayScene {
 		videoMeshFolder
 			.add(this.parameters, 'videoGrayscale', 0, 1, 0.001)
 			.name('Grayscale')
+			.onChange(() => this.updateVideoMaterial())
+		videoMeshFolder
+			.add(this.parameters, 'videoRotation', -Math.PI, Math.PI, 0.01)
+			.name('Video Rotation')
 			.onChange(() => this.updateVideoMaterial())
 		videoMeshFolder
 			.add(this.parameters, 'videoToneMapped')
@@ -609,11 +718,11 @@ class PrayScene {
 			.name('Rotation Z')
 			.onChange(() => this.updateVolumetricLights())
 		volumetricFolder
-			.add(this.parameters, 'volumetricScaleX', 0.1, 20, 0.01)
+			.add(this.parameters, 'volumetricScaleX', 0.1, 50, 0.01)
 			.name('Glow Width')
 			.onChange(() => this.updateVolumetricLights())
 		volumetricFolder
-			.add(this.parameters, 'volumetricScaleY', 0.1, 20, 0.01)
+			.add(this.parameters, 'volumetricScaleY', 0.1, 30, 0.01)
 			.name('Glow Height')
 			.onChange(() => this.updateVolumetricLights())
 		volumetricFolder
@@ -640,6 +749,60 @@ class PrayScene {
 			.add(this.parameters, 'volumetricSpotPenumbra', 0, 1, 0.001)
 			.name('Light Penumbra')
 			.onChange(() => this.updateVolumetricLights())
+
+		const spotLightFolder = this.gui.addFolder('Spotlight')
+		spotLightFolder
+			.add(this.parameters, 'spotLightEnabled')
+			.name('Enabled')
+			.onChange(() => this.updateSceneSpotLight())
+		spotLightFolder
+			.addColor(this.parameters, 'spotLightColor')
+			.name('Color')
+			.onChange(() => this.updateSceneSpotLight())
+		spotLightFolder
+			.add(this.parameters, 'spotLightIntensity', 0, 20, 0.01)
+			.name('Intensity')
+			.onChange(() => this.updateSceneSpotLight())
+		spotLightFolder
+			.add(this.parameters, 'spotLightDistance', 0, 50, 0.01)
+			.name('Distance')
+			.onChange(() => this.updateSceneSpotLight())
+		spotLightFolder
+			.add(this.parameters, 'spotLightAngle', 0.01, Math.PI / 2, 0.001)
+			.name('Angle')
+			.onChange(() => this.updateSceneSpotLight())
+		spotLightFolder
+			.add(this.parameters, 'spotLightPenumbra', 0, 1, 0.001)
+			.name('Penumbra')
+			.onChange(() => this.updateSceneSpotLight())
+		spotLightFolder
+			.add(this.parameters, 'spotLightDecay', 0, 4, 0.01)
+			.name('Decay')
+			.onChange(() => this.updateSceneSpotLight())
+		spotLightFolder
+			.add(this.parameters, 'spotLightX', -20, 20, 0.01)
+			.name('Position X')
+			.onChange(() => this.updateSceneSpotLight())
+		spotLightFolder
+			.add(this.parameters, 'spotLightY', -20, 20, 0.01)
+			.name('Position Y')
+			.onChange(() => this.updateSceneSpotLight())
+		spotLightFolder
+			.add(this.parameters, 'spotLightZ', -30, 30, 0.01)
+			.name('Position Z')
+			.onChange(() => this.updateSceneSpotLight())
+		spotLightFolder
+			.add(this.parameters, 'spotLightTargetX', -20, 20, 0.01)
+			.name('Target X')
+			.onChange(() => this.updateSceneSpotLight())
+		spotLightFolder
+			.add(this.parameters, 'spotLightTargetY', -20, 20, 0.01)
+			.name('Target Y')
+			.onChange(() => this.updateSceneSpotLight())
+		spotLightFolder
+			.add(this.parameters, 'spotLightTargetZ', -30, 30, 0.01)
+			.name('Target Z')
+			.onChange(() => this.updateSceneSpotLight())
 
 		const rainFolder = this.gui.addFolder('Rain')
 		rainFolder
@@ -685,6 +848,44 @@ class PrayScene {
 		rainFolder
 			.add(this.parameters, 'rainWindZ', -5, 5, 0.01)
 			.name('Wind Z')
+		rainFolder
+			.add(this.parameters, 'rainRippleEnabled')
+			.name('Sea Ripples')
+			.onChange(() => this.updateSeaUniforms())
+		rainFolder
+			.add(this.parameters, 'rainRippleStrength', 0, 0.24, 0.001)
+			.name('Ripple Strength')
+			.onChange(() => this.updateSeaUniforms())
+		rainFolder
+			.add(this.parameters, 'rainRippleRadius', 0.02, 1.2, 0.001)
+			.name('Ripple Width')
+			.onChange(() => this.updateSeaUniforms())
+		rainFolder
+			.add(this.parameters, 'rainRippleSpeed', 0.1, 5, 0.01)
+			.name('Ripple Speed')
+			.onChange(() => this.updateSeaUniforms())
+		rainFolder
+			.add(this.parameters, 'rainRippleFade', 0.1, 4, 0.01)
+			.name('Ripple Fade')
+			.onChange(() => this.updateSeaUniforms())
+		rainFolder
+			.add(this.parameters, 'holderImpactEnabled')
+			.name('Holder Hits')
+			.onChange(() => this.updateHolderImpactSettings())
+		rainFolder
+			.addColor(this.parameters, 'holderImpactColor')
+			.name('Hit Color')
+			.onChange(() => this.updateHolderImpactSettings())
+		rainFolder
+			.add(this.parameters, 'holderImpactOpacity', 0, 1, 0.001)
+			.name('Hit Opacity')
+			.onChange(() => this.updateHolderImpactSettings())
+		rainFolder
+			.add(this.parameters, 'holderImpactSize', 0.01, 0.4, 0.001)
+			.name('Hit Size')
+		rainFolder
+			.add(this.parameters, 'holderImpactFade', 0.05, 2, 0.01)
+			.name('Hit Fade')
 
 		const actions = {
 			copyConfig: () => this.copyParameters(),
@@ -705,6 +906,7 @@ class PrayScene {
 		cameraFolder.open()
 		fogFolder.open()
 		volumetricFolder.open()
+		spotLightFolder.open()
 		rainFolder.open()
 		configFolder.open()
 
@@ -718,7 +920,9 @@ class PrayScene {
 		this.updateSeaUniforms()
 		this.updateFog()
 		this.updateVolumetricLights()
+		this.updateSceneSpotLight()
 		this.updateRainSettings()
+		this.updateHolderImpactSettings()
 		this.saveParameters()
 	}
 
@@ -824,6 +1028,29 @@ class PrayScene {
 		}
 	}
 
+	updateSceneSpotLight() {
+		if (!this.spotLight || !this.spotLightTarget) return
+
+		this.spotLight.visible = this.parameters.spotLightEnabled
+		this.spotLight.color.set(this.parameters.spotLightColor)
+		this.spotLight.intensity = this.parameters.spotLightIntensity
+		this.spotLight.distance = this.parameters.spotLightDistance
+		this.spotLight.angle = this.parameters.spotLightAngle
+		this.spotLight.penumbra = this.parameters.spotLightPenumbra
+		this.spotLight.decay = this.parameters.spotLightDecay
+		this.spotLight.position.set(
+			this.parameters.spotLightX,
+			this.parameters.spotLightY,
+			this.parameters.spotLightZ,
+		)
+		this.spotLightTarget.position.set(
+			this.parameters.spotLightTargetX,
+			this.parameters.spotLightTargetY,
+			this.parameters.spotLightTargetZ,
+		)
+		this.spotLightTarget.updateMatrixWorld()
+	}
+
 	updateRainSettings() {
 		if (!this.rainGroup || !this.rainMaterial) return
 
@@ -832,11 +1059,21 @@ class PrayScene {
 		this.rainMaterial.opacity = this.parameters.rainOpacity
 	}
 
+	updateHolderImpactSettings() {
+		if (!this.holderImpactMesh || !this.holderImpactMaterial) return
+
+		this.holderImpactMesh.visible = this.parameters.holderImpactEnabled
+		this.holderImpactMaterial.color.set(this.parameters.holderImpactColor)
+		this.holderImpactMaterial.opacity = this.parameters.holderImpactOpacity
+	}
+
 	updateRain(delta, elapsed) {
 		if (!this.rainMesh || !this.rainDrops.length) return
 
 		const halfY = this.parameters.rainSpreadY * 0.5
 		const fallDistance = Math.max(this.parameters.rainSpreadY, 0.001)
+		const floorContact = this.getFloorContactData()
+		const holderBounds = this.getVideoGroupBounds()
 		const direction = new THREE.Vector3(
 			this.parameters.rainWindX,
 			-1,
@@ -848,9 +1085,32 @@ class PrayScene {
 		)
 
 		this.rainDrops.forEach((drop, index) => {
+			const previousY = drop.y
+
 			drop.y -= delta * this.parameters.rainSpeed * drop.speed
 			drop.x += delta * this.parameters.rainWindX * drop.speed
 			drop.z += delta * this.parameters.rainWindZ * drop.speed
+
+			if (
+				floorContact &&
+				previousY >= floorContact.y &&
+				drop.y < floorContact.y &&
+				drop.x >= floorContact.minX &&
+				drop.x <= floorContact.maxX &&
+				drop.z >= floorContact.minZ &&
+				drop.z <= floorContact.maxZ
+			) {
+				this.spawnRainRipple(drop.x, drop.z, elapsed)
+			}
+
+			if (holderBounds && this.parameters.holderImpactEnabled) {
+				drop.hitCooldown = Math.max((drop.hitCooldown ?? 0) - delta, 0)
+
+				if (drop.hitCooldown <= 0 && holderBounds.containsPoint(drop)) {
+					this.spawnHolderImpact(drop.x, drop.y, drop.z, elapsed, index)
+					drop.hitCooldown = 0.16 + this.seededRandom(index + Math.floor(elapsed * 60)) * 0.26
+				}
+			}
 
 			if (drop.y < -halfY) {
 				drop.y += fallDistance
@@ -870,6 +1130,78 @@ class PrayScene {
 		})
 
 		this.rainMesh.instanceMatrix.needsUpdate = true
+		this.updateHolderImpacts(elapsed)
+	}
+
+	getFloorContactData() {
+		const floor = this.model?.getObjectByName('floor')
+
+		if (!floor?.isMesh) return null
+
+		this.floorBounds.setFromObject(floor)
+
+		return {
+			y: this.floorBounds.max.y,
+			minX: this.floorBounds.min.x,
+			maxX: this.floorBounds.max.x,
+			minZ: this.floorBounds.min.z,
+			maxZ: this.floorBounds.max.z,
+		}
+	}
+
+	getVideoGroupBounds() {
+		if (!this.videoGroup) return null
+
+		this.videoGroupBounds.setFromObject(this.videoGroup)
+		this.videoGroupBounds.expandByScalar(0.08)
+
+		return this.videoGroupBounds
+	}
+
+	spawnRainRipple(x, z, elapsed) {
+		if (!this.floorMaterial || !this.parameters.rainRippleEnabled) return
+
+		const ripple = this.rainRippleVectors[this.rainRippleIndex]
+		ripple.set(x, z, elapsed)
+		this.rainRippleIndex = (this.rainRippleIndex + 1) % this.rainRippleVectors.length
+		this.floorMaterial.uniforms.uRainRipples.value = this.rainRippleVectors
+	}
+
+	spawnHolderImpact(x, y, z, elapsed, seed) {
+		if (!this.holderImpactMesh || !this.parameters.holderImpactEnabled) return
+
+		const impact = this.holderImpacts[this.holderImpactIndex]
+		impact.active = true
+		impact.x = x + (this.seededRandom(seed + 313) - 0.5) * 0.08
+		impact.y = y
+		impact.z = z + (this.seededRandom(seed + 719) - 0.5) * 0.08
+		impact.time = elapsed
+		impact.scale = 0.65 + this.seededRandom(seed + 997) * 0.7
+		this.holderImpactIndex = (this.holderImpactIndex + 1) % this.holderImpacts.length
+	}
+
+	updateHolderImpacts(elapsed) {
+		if (!this.holderImpactMesh || !this.holderImpacts.length) return
+
+		const fade = Math.max(this.parameters.holderImpactFade, 0.001)
+
+		this.holderImpacts.forEach((impact, index) => {
+			const age = elapsed - impact.time
+			const normalizedAge = THREE.MathUtils.clamp(age / fade, 0, 1)
+			const life = impact.active ? 1 - normalizedAge : 0
+			const scale = this.parameters.holderImpactSize * impact.scale * life
+
+			if (life <= 0) {
+				impact.active = false
+			}
+
+			this.holderImpactDummy.position.set(impact.x, impact.y, impact.z)
+			this.holderImpactDummy.scale.setScalar(scale)
+			this.holderImpactDummy.updateMatrix()
+			this.holderImpactMesh.setMatrixAt(index, this.holderImpactDummy.matrix)
+		})
+
+		this.holderImpactMesh.instanceMatrix.needsUpdate = true
 	}
 
 	disposeRain() {
@@ -931,6 +1263,23 @@ class PrayScene {
 		}
 	}
 
+	updateVideoGroupScale() {
+		if (!this.videoGroup) return
+
+		const baseScale = this.meshScaleBases.get('video-group')
+
+		if (!baseScale) return
+
+		this.videoGroup.scale.copy(baseScale).multiplyScalar(this.parameters.videoMeshScale)
+		this.updateVideoFrameSize()
+	}
+
+	updateVideoGroupRotation() {
+		if (!this.videoGroup) return
+
+		this.videoGroup.rotation.set(0, this.parameters.videoMeshRotationY, 0)
+	}
+
 	updateMeshPosition(meshName, parameterPrefix) {
 		if (!this.model) return
 
@@ -943,6 +1292,20 @@ class PrayScene {
 			basePosition.x + this.parameters[`${parameterPrefix}X`],
 			basePosition.y + this.parameters[`${parameterPrefix}Y`],
 			basePosition.z + this.parameters[`${parameterPrefix}Z`],
+		)
+	}
+
+	updateVideoGroupPosition() {
+		if (!this.videoGroup) return
+
+		const basePosition = this.meshPositionBases.get('video-group')
+
+		if (!basePosition) return
+
+		this.videoGroup.position.set(
+			basePosition.x + this.parameters.videoMeshX,
+			basePosition.y + this.parameters.videoMeshY,
+			basePosition.z + this.parameters.videoMeshZ,
 		)
 	}
 
@@ -1004,6 +1367,7 @@ class PrayScene {
 				uOpacity: { value: this.parameters.videoOpacity },
 				uBrightness: { value: this.parameters.videoEmissiveIntensity },
 				uGrayscale: { value: this.parameters.videoGrayscale },
+				uRotation: { value: this.parameters.videoRotation },
 			},
 			vertexShader: `
 				varying vec2 vUv;
@@ -1023,6 +1387,7 @@ class PrayScene {
 				uniform float uOpacity;
 				uniform float uBrightness;
 				uniform float uGrayscale;
+				uniform float uRotation;
 
 				varying vec2 vUv;
 
@@ -1046,6 +1411,13 @@ class PrayScene {
 				{
 					vec2 baseUv = (vUv - uBoundsMin) / uBoundsSize;
 					vec2 uv = getUV(baseUv, uTextureSize, uQuadSize);
+					vec2 centeredUv = uv - vec2(0.5);
+					float rotationCos = cos(uRotation);
+					float rotationSin = sin(uRotation);
+					uv = vec2(
+						(centeredUv.x * rotationCos) - (centeredUv.y * rotationSin),
+						(centeredUv.x * rotationSin) + (centeredUv.y * rotationCos)
+					) + vec2(0.5);
 					vec4 videoColor = texture2D(uTexture, uv);
 					float grayscale = dot(videoColor.rgb, vec3(0.299, 0.587, 0.114));
 					videoColor.rgb = mix(videoColor.rgb, vec3(grayscale), uGrayscale);
@@ -1123,6 +1495,7 @@ class PrayScene {
 		this.videoMaterial.uniforms.uOpacity.value = this.parameters.videoOpacity
 		this.videoMaterial.uniforms.uBrightness.value = this.parameters.videoEmissiveIntensity
 		this.videoMaterial.uniforms.uGrayscale.value = this.parameters.videoGrayscale
+		this.videoMaterial.uniforms.uRotation.value = this.parameters.videoRotation
 		this.videoMaterial.transparent = this.parameters.videoOpacity < 1
 		this.videoMaterial.toneMapped = this.parameters.videoToneMapped
 		this.videoMaterial.needsUpdate = true
@@ -1160,6 +1533,12 @@ class PrayScene {
 		uniforms.uColorMultiplier.value = this.parameters.seaColorMultiplier
 		uniforms.uEdgeFadeEnabled.value = this.parameters.seaEdgeFadeEnabled ? 1 : 0
 		uniforms.uEdgeFadeSoftness.value = this.parameters.seaEdgeFadeSoftness
+		uniforms.uRainRippleStrength.value = this.parameters.rainRippleEnabled
+			? this.parameters.rainRippleStrength
+			: 0
+		uniforms.uRainRippleRadius.value = this.parameters.rainRippleRadius
+		uniforms.uRainRippleSpeed.value = this.parameters.rainRippleSpeed
+		uniforms.uRainRippleFade.value = this.parameters.rainRippleFade
 	}
 
 	attachRenderer() {
@@ -1240,30 +1619,53 @@ class PrayScene {
 	loadModel() {
 		if (this.model) return
 
-		this.loader.parse(
-			this.decodeBase64ToArrayBuffer(PRAY_GLB_BASE64),
-			'',
+		const modelUrl = this.resolveModelUrl()
+
+		this.loader.load(
+			modelUrl,
 			(gltf) => {
 				this.model = gltf.scene
 				this.prepareModel(this.model)
 				this.modelGroup.add(this.model)
 			},
+			undefined,
 			(error) => {
 				console.error('[PrayScene] Could not load pray.glb', error)
 			},
 		)
 	}
 
-	decodeBase64ToArrayBuffer(base64String) {
-		const binaryString = window.atob(base64String)
-		const byteLength = binaryString.length
-		const bytes = new Uint8Array(byteLength)
-
-		for (let index = 0; index < byteLength; index += 1) {
-			bytes[index] = binaryString.charCodeAt(index)
+	resolveModelUrl() {
+		if (window.PRAYX_MODEL_URL) {
+			return window.PRAYX_MODEL_URL
 		}
 
-		return bytes.buffer
+		if (/^(https?:|data:|blob:)/.test(prayModelUrl)) {
+			return prayModelUrl
+		}
+
+		const scriptUrl = this.resolveScriptUrl()
+
+		if (scriptUrl) {
+			return new URL(prayModelUrl, scriptUrl).href
+		}
+
+		return prayModelUrl
+	}
+
+	resolveScriptUrl() {
+		if (document.currentScript?.src) {
+			return document.currentScript.src
+		}
+
+		const scripts = Array.from(document.scripts)
+		const script = scripts.find((item) =>
+			item.src.includes('/src/main.js') ||
+			item.src.endsWith('/main.js') ||
+			item.src.includes('/main.js?')
+		)
+
+		return script?.src || window.location.href
 	}
 
 	prepareModel(model) {
@@ -1273,9 +1675,10 @@ class PrayScene {
 		const size = bounds.getSize(new THREE.Vector3())
 		const maxDimension = Math.max(size.x, size.y, size.z, 0.001)
 		const targetSize = 4.3
+		const normalizedScale = targetSize / maxDimension
 
-		model.position.sub(center)
-		model.scale.setScalar(targetSize / maxDimension)
+		model.scale.setScalar(normalizedScale)
+		model.position.copy(center).multiplyScalar(-normalizedScale)
 		model.rotation.set(0.08, -0.36, 0)
 
 		model.traverse((child) => {
@@ -1286,19 +1689,73 @@ class PrayScene {
 			child.castShadow = true
 			child.receiveShadow = true
 
-			if (child.material?.isMeshStandardMaterial) {
-				child.material.roughness = Math.min(child.material.roughness ?? 0.55, 0.62)
-				child.material.metalness = child.material.metalness ?? 0.08
-				child.material.needsUpdate = true
-			}
+			this.prepareModelMaterial(child)
 		})
 
-		this.updateMeshPosition('video-mesh', 'videoMesh')
-		this.updateMeshScale('video-mesh', this.parameters.videoMeshScale)
+		this.createVideoGroup()
+		this.updateVideoGroupPosition()
+		this.updateVideoGroupRotation()
+		this.updateVideoGroupScale()
 		this.applyVideoTexture()
 		this.updateMeshPosition('floor', 'floor')
 		this.updateMeshScale('floor', this.parameters.floorScale)
 		this.prepareFloorSea()
+	}
+
+	createVideoGroup() {
+		const holder = this.model?.getObjectByName('video-holder')
+		const videoMesh = this.model?.getObjectByName('video-mesh')
+
+		if (!this.model || !holder || !videoMesh || this.videoGroup) return
+
+		this.model.updateWorldMatrix(true, true)
+
+		const bounds = new THREE.Box3()
+			.setFromObject(holder)
+			.union(new THREE.Box3().setFromObject(videoMesh))
+		const groupCenter = bounds.getCenter(new THREE.Vector3())
+
+		this.videoGroup = new THREE.Group()
+		this.videoGroup.name = 'video-group'
+		this.videoGroup.position.copy(this.model.worldToLocal(groupCenter.clone()))
+		this.model.add(this.videoGroup)
+
+		this.model.updateWorldMatrix(true, true)
+		this.videoGroup.updateWorldMatrix(true, true)
+		this.videoGroup.attach(holder)
+		this.videoGroup.attach(videoMesh)
+
+		this.meshPositionBases.set('video-group', this.videoGroup.position.clone())
+		this.meshScaleBases.set('video-group', this.videoGroup.scale.clone())
+	}
+
+	prepareModelMaterial(mesh) {
+		if (!mesh.material) {
+			mesh.material = new THREE.MeshStandardMaterial({
+				color: mesh.name === 'video-holder' ? '#161616' : '#f3f0ea',
+				roughness: 0.68,
+				metalness: 0.04,
+				side: THREE.DoubleSide,
+			})
+			return
+		}
+
+		const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+
+		materials.forEach((material) => {
+			material.side = THREE.DoubleSide
+
+			if (material.isMeshStandardMaterial) {
+				material.roughness = Math.min(material.roughness ?? 0.55, 0.68)
+				material.metalness = material.metalness ?? 0.04
+
+				if (mesh.name === 'video-holder' && !material.map) {
+					material.color.set('#161616')
+				}
+			}
+
+			material.needsUpdate = true
+		})
 	}
 
 	prepareFloorSea() {
@@ -1467,6 +1924,12 @@ class PrayScene {
 		this.videoTexture?.dispose()
 		this.videoMaterial?.dispose()
 		this.disposeRain()
+		this.holderImpactGeometry?.dispose()
+		this.holderImpactMaterial?.dispose()
+		this.holderImpactMesh = null
+		this.holderImpactGeometry = null
+		this.holderImpactMaterial = null
+		this.holderImpacts = []
 		this.volumetricGroup?.traverse((child) => {
 			if (!child.isMesh) return
 			child.geometry?.dispose()
@@ -1477,6 +1940,8 @@ class PrayScene {
 		this.voidBackdropMaterial?.dispose()
 		this.volumetricSpotLight = null
 		this.volumetricSpotLightTarget = null
+		this.spotLight = null
+		this.spotLightTarget = null
 		this.renderer?.dispose()
 
 		this.wrapper = null
@@ -1486,6 +1951,7 @@ class PrayScene {
 		this.model = null
 		this.sceneGroup = null
 		this.modelGroup = null
+		this.videoGroup = null
 		this.videoElement = null
 		this.videoTexture = null
 		this.videoMaterial = null
@@ -1493,6 +1959,8 @@ class PrayScene {
 		this.volumetricGroup = null
 		this.volumetricMaterial = null
 		this.volumetricTexture = null
+		this.spotLight = null
+		this.spotLightTarget = null
 		this.voidBackdrop = null
 		this.voidBackdropMaterial = null
 		this.timer = null

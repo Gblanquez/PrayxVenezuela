@@ -1,6 +1,18 @@
 import { defineConfig } from 'vite'
+import { copyFileSync, mkdirSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 export default defineConfig({
+	plugins: [
+		{
+			name: 'copy-pray-model',
+			closeBundle() {
+				const outDir = resolve('dist')
+				mkdirSync(outDir, { recursive: true })
+				copyFileSync(resolve('src/static/pray.glb'), resolve(outDir, 'pray.glb'))
+			},
+		},
+	],
 	server: {
 		host: 'localhost', // Ensures you can access it on your local network
 		port: 3000,

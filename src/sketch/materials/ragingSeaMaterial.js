@@ -10,6 +10,11 @@ uniform float uSmallWavesElevation;
 uniform float uSmallWavesFrequency;
 uniform float uSmallWavesSpeed;
 uniform float uSmallIterations;
+uniform vec3 uRainRipples[16];
+uniform float uRainRippleStrength;
+uniform float uRainRippleRadius;
+uniform float uRainRippleSpeed;
+uniform float uRainRippleFade;
 
 varying float vElevation;
 varying vec2 vUv;
@@ -118,6 +123,23 @@ void main()
 		);
 	}
 
+	for (int i = 0; i < 16; i++)
+	{
+		vec3 ripple = uRainRipples[i];
+		float age = uTime - ripple.z;
+
+		if (age > 0.0 && age < uRainRippleFade)
+		{
+			float distanceToImpact = distance(modelPosition.xz, ripple.xy);
+			float radius = age * uRainRippleSpeed;
+			float ring = 1.0 - smoothstep(0.0, uRainRippleRadius, abs(distanceToImpact - radius));
+			float fade = 1.0 - smoothstep(0.0, uRainRippleFade, age);
+			float wave = sin((distanceToImpact - radius) * 32.0) * ring * fade;
+
+			elevation += wave * uRainRippleStrength;
+		}
+	}
+
 	modelPosition.y += elevation;
 
 	vec4 viewPosition = viewMatrix * modelPosition;
@@ -170,6 +192,13 @@ export function createRagingSeaMaterial(parameters) {
 			uSmallWavesFrequency: { value: parameters.seaSmallWavesFrequency },
 			uSmallWavesSpeed: { value: parameters.seaSmallWavesSpeed },
 			uSmallIterations: { value: parameters.seaSmallIterations },
+			uRainRipples: {
+				value: Array.from({ length: 16 }, () => new THREE.Vector3(0, 0, -1000)),
+			},
+			uRainRippleStrength: { value: parameters.rainRippleStrength },
+			uRainRippleRadius: { value: parameters.rainRippleRadius },
+			uRainRippleSpeed: { value: parameters.rainRippleSpeed },
+			uRainRippleFade: { value: parameters.rainRippleFade },
 			uDepthColor: { value: new THREE.Color(parameters.seaDepthColor) },
 			uSurfaceColor: { value: new THREE.Color(parameters.seaSurfaceColor) },
 			uColorOffset: { value: parameters.seaColorOffset },
