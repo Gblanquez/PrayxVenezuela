@@ -7,7 +7,7 @@ import { PRAY_GLB_BASE64 } from './models/prayModelData'
 
 const defaultSelector = '.canvas-wrapper'
 const dracoDecoderUrl = 'https://www.gstatic.com/draco/v1/decoders/'
-const storageKey = 'prayx-venezuela-scene-config-v1'
+const storageKey = 'prayx-venezuela-scene-config-v2'
 
 class PrayScene {
 	constructor() {
