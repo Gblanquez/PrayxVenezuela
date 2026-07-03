@@ -134,6 +134,10 @@ class PrayScene {
 			volumetricScaleY: 10.22,
 			volumetricScaleZ: 10,
 			volumetricPulse: 0.094,
+			volumetricCore: 0.18,
+			volumetricSoftness: 0.92,
+			volumetricFalloff: 1.55,
+			volumetricNoise: 0.045,
 			volumetricSpotIntensity: 12.87,
 			volumetricSpotDistance: 9.68,
 			volumetricSpotAngle: 1.2,
@@ -270,18 +274,12 @@ class PrayScene {
 
 	createVolumetricLights() {
 		this.volumetricGroup = new THREE.Group()
-		this.volumetricTexture = this.createVolumetricTexture()
-		this.volumetricMaterial = new THREE.SpriteMaterial({
-			map: this.volumetricTexture,
-			color: new THREE.Color(this.parameters.volumetricColor),
-			opacity: this.parameters.volumetricOpacity,
-			transparent: true,
-			depthWrite: false,
-			depthTest: false,
-			blending: THREE.AdditiveBlending,
-		})
+		this.volumetricMaterial = this.createVolumetricShaderMaterial()
 
-		const atmosphericGlow = new THREE.Sprite(this.volumetricMaterial)
+		const atmosphericGlow = new THREE.Mesh(
+			new THREE.PlaneGeometry(1, 1, 1, 1),
+			this.volumetricMaterial,
+		)
 		this.volumetricGroup.add(atmosphericGlow)
 		this.scene.add(this.volumetricGroup)
 
@@ -299,6 +297,63 @@ class PrayScene {
 		this.scene.add(this.volumetricSpotLight, this.volumetricSpotLightTarget)
 
 		this.updateVolumetricLights()
+	}
+
+	createVolumetricShaderMaterial() {
+		return new THREE.ShaderMaterial({
+			uniforms: {
+				uColor: { value: new THREE.Color(this.parameters.volumetricColor) },
+				uOpacity: { value: this.parameters.volumetricOpacity },
+				uCore: { value: this.parameters.volumetricCore },
+				uSoftness: { value: this.parameters.volumetricSoftness },
+				uFalloff: { value: this.parameters.volumetricFalloff },
+				uNoise: { value: this.parameters.volumetricNoise },
+			},
+			vertexShader: `
+				varying vec2 vUv;
+
+				void main()
+				{
+					vUv = uv;
+					gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+				}
+			`,
+			fragmentShader: `
+				uniform vec3 uColor;
+				uniform float uOpacity;
+				uniform float uCore;
+				uniform float uSoftness;
+				uniform float uFalloff;
+				uniform float uNoise;
+
+				varying vec2 vUv;
+
+				float hash(vec2 point)
+				{
+					return fract(sin(dot(point, vec2(127.1, 311.7))) * 43758.5453123);
+				}
+
+				void main()
+				{
+					vec2 centeredUv = vUv - vec2(0.5);
+					centeredUv.y *= 0.82;
+
+					float radius = length(centeredUv);
+					float core = 1.0 - smoothstep(uCore, max(uCore + uSoftness, uCore + 0.001), radius);
+					float verticalFade = smoothstep(0.0, 0.18, vUv.y) * (1.0 - smoothstep(0.78, 1.0, vUv.y));
+					float edgeFade = smoothstep(0.5, 0.02, radius);
+					float grain = mix(1.0, hash(vUv * 256.0), uNoise);
+					float alpha = pow(max(core, 0.0), uFalloff) * verticalFade * edgeFade * grain * uOpacity;
+
+					gl_FragColor = vec4(uColor, alpha);
+					#include <colorspace_fragment>
+				}
+			`,
+			transparent: true,
+			depthWrite: false,
+			depthTest: false,
+			blending: THREE.AdditiveBlending,
+		})
 	}
 
 	createVolumetricTexture() {
@@ -734,6 +789,22 @@ class PrayScene {
 			.name('Pulse')
 			.onChange(() => this.updateVolumetricLights())
 		volumetricFolder
+			.add(this.parameters, 'volumetricCore', 0.01, 0.5, 0.001)
+			.name('Shader Core')
+			.onChange(() => this.updateVolumetricLights())
+		volumetricFolder
+			.add(this.parameters, 'volumetricSoftness', 0.02, 1.5, 0.001)
+			.name('Shader Softness')
+			.onChange(() => this.updateVolumetricLights())
+		volumetricFolder
+			.add(this.parameters, 'volumetricFalloff', 0.2, 5, 0.001)
+			.name('Shader Falloff')
+			.onChange(() => this.updateVolumetricLights())
+		volumetricFolder
+			.add(this.parameters, 'volumetricNoise', 0, 0.4, 0.001)
+			.name('Shader Noise')
+			.onChange(() => this.updateVolumetricLights())
+		volumetricFolder
 			.add(this.parameters, 'volumetricSpotIntensity', 0, 20, 0.01)
 			.name('Light Intensity')
 			.onChange(() => this.updateVolumetricLights())
@@ -1010,8 +1081,12 @@ class PrayScene {
 			1,
 		)
 
-		this.volumetricMaterial.color.set(this.parameters.volumetricColor)
-		this.volumetricMaterial.opacity = this.parameters.volumetricOpacity
+		this.volumetricMaterial.uniforms.uColor.value.set(this.parameters.volumetricColor)
+		this.volumetricMaterial.uniforms.uOpacity.value = this.parameters.volumetricOpacity
+		this.volumetricMaterial.uniforms.uCore.value = this.parameters.volumetricCore
+		this.volumetricMaterial.uniforms.uSoftness.value = this.parameters.volumetricSoftness
+		this.volumetricMaterial.uniforms.uFalloff.value = this.parameters.volumetricFalloff
+		this.volumetricMaterial.uniforms.uNoise.value = this.parameters.volumetricNoise
 
 		if (this.volumetricSpotLight) {
 			this.volumetricSpotLight.visible = this.parameters.volumetricEnabled
@@ -1862,7 +1937,7 @@ class PrayScene {
 		}
 
 		if (this.volumetricMaterial) {
-			this.volumetricMaterial.opacity =
+			this.volumetricMaterial.uniforms.uOpacity.value =
 				this.parameters.volumetricOpacity *
 				(1 + Math.sin(elapsed * 0.38) * this.parameters.volumetricPulse)
 		}
