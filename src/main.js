@@ -1,3 +1,6 @@
 import './styles/style.css'
+import { initDonationCheckout } from './payments/stripe-donations'
+import prayScene from './sketch/sketch'
 
-console.log('Hello from VS Code')
+initDonationCheckout()
+prayScene.mount()
