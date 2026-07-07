@@ -62,6 +62,7 @@ class PrayScene {
 		this.timer.connect(document)
 		this.cameraBasePosition = new THREE.Vector3(0, 0.2, 7)
 		this.cameraLookAt = new THREE.Vector3(0, 0, 0)
+		this.cameraFocusTarget = new THREE.Vector3()
 		this.targetPointerOffset = new THREE.Vector2()
 		this.targetDeviceOffset = new THREE.Vector2()
 		this.combinedCameraOffset = new THREE.Vector2()
@@ -117,8 +118,8 @@ class PrayScene {
 			pointerStrengthX: 0.45,
 			pointerStrengthY: 0.28,
 			deviceParallaxEnabled: true,
-			deviceStrengthX: 0.72,
-			deviceStrengthY: 0.56,
+			deviceStrengthX: 0.82,
+			deviceStrengthY: 0.92,
 			fogEnabled: true,
 			fogColor: '#000000',
 			fogDensity: 0.048,
@@ -1925,8 +1926,8 @@ class PrayScene {
 			this.deviceOrientationBase = { gamma, beta }
 		}
 
-		const relativeGamma = THREE.MathUtils.clamp(gamma - this.deviceOrientationBase.gamma, -24, 24) / 24
-		const relativeBeta = THREE.MathUtils.clamp(beta - this.deviceOrientationBase.beta, -24, 24) / 24
+		const relativeGamma = THREE.MathUtils.clamp(gamma - this.deviceOrientationBase.gamma, -20, 20) / 20
+		const relativeBeta = THREE.MathUtils.clamp(beta - this.deviceOrientationBase.beta, -14, 14) / 14
 
 		this.targetDeviceOffset.set(
 			relativeGamma * this.parameters.deviceStrengthX,
@@ -1965,12 +1966,18 @@ class PrayScene {
 		this.updateRain(delta, elapsed)
 
 		if (this.camera) {
+			this.cameraFocusTarget.copy(this.cameraLookAt)
+
+			if (this.videoGroup) {
+				this.videoGroup.getWorldPosition(this.cameraFocusTarget)
+			}
+
 			this.camera.position.set(
 				this.cameraBasePosition.x + this.currentCameraOffset.x,
 				this.cameraBasePosition.y + this.currentCameraOffset.y,
 				this.cameraBasePosition.z,
 			)
-			this.camera.lookAt(this.cameraLookAt)
+			this.camera.lookAt(this.cameraFocusTarget)
 		}
 
 		this.renderer.render(this.scene, this.camera)
