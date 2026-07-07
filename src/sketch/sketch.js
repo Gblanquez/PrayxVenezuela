@@ -7,7 +7,7 @@ import prayModelUrl from '../static/pray.glb?url'
 
 const defaultSelector = '.canvas-wrapper'
 const dracoDecoderUrl = 'https://www.gstatic.com/draco/v1/decoders/'
-const storageKey = 'prayx-venezuela-scene-config-v5'
+const storageKey = 'prayx-venezuela-scene-config-v6'
 
 class PrayScene {
 	constructor() {
@@ -118,8 +118,8 @@ class PrayScene {
 			pointerStrengthX: 0.45,
 			pointerStrengthY: 0.28,
 			deviceParallaxEnabled: true,
-			deviceStrengthX: 0.82,
-			deviceStrengthY: 0.92,
+			deviceStrengthX: 2.2,
+			deviceStrengthY: 1.8,
 			fogEnabled: true,
 			fogColor: '#000000',
 			fogDensity: 0.048,
@@ -717,11 +717,11 @@ class PrayScene {
 			.name('Device Motion')
 			.onChange(() => this.updateInteractionSettings())
 		cameraFolder
-			.add(this.parameters, 'deviceStrengthX', 0, 2, 0.001)
+			.add(this.parameters, 'deviceStrengthX', 0, 4, 0.001)
 			.name('Device X')
 			.onChange(() => this.updateInteractionSettings())
 		cameraFolder
-			.add(this.parameters, 'deviceStrengthY', 0, 2, 0.001)
+			.add(this.parameters, 'deviceStrengthY', 0, 4, 0.001)
 			.name('Device Y')
 			.onChange(() => this.updateInteractionSettings())
 
@@ -1926,8 +1926,8 @@ class PrayScene {
 			this.deviceOrientationBase = { gamma, beta }
 		}
 
-		const relativeGamma = THREE.MathUtils.clamp(gamma - this.deviceOrientationBase.gamma, -20, 20) / 20
-		const relativeBeta = THREE.MathUtils.clamp(beta - this.deviceOrientationBase.beta, -14, 14) / 14
+		const relativeGamma = THREE.MathUtils.clamp(gamma - this.deviceOrientationBase.gamma, -10, 10) / 10
+		const relativeBeta = THREE.MathUtils.clamp(beta - this.deviceOrientationBase.beta, -9, 9) / 9
 
 		this.targetDeviceOffset.set(
 			relativeGamma * this.parameters.deviceStrengthX,
@@ -1975,7 +1975,7 @@ class PrayScene {
 			this.camera.position.set(
 				this.cameraBasePosition.x + this.currentCameraOffset.x,
 				this.cameraBasePosition.y + this.currentCameraOffset.y,
-				this.cameraBasePosition.z,
+				this.cameraBasePosition.z + this.currentCameraOffset.y * 0.35,
 			)
 			this.camera.lookAt(this.cameraFocusTarget)
 		}
