@@ -7,7 +7,7 @@ import prayModelUrl from '../static/pray.glb?url'
 
 const defaultSelector = '.canvas-wrapper'
 const dracoDecoderUrl = 'https://www.gstatic.com/draco/v1/decoders/'
-const storageKey = 'prayx-venezuela-scene-config-v6'
+const storageKey = 'prayx-venezuela-scene-config-v7'
 
 class PrayScene {
 	constructor() {
@@ -83,7 +83,7 @@ class PrayScene {
 			groupRotationY: -0.00159265358979299,
 			groupScale: 4.59,
 			videoMeshX: -4.18,
-			videoMeshY: 0,
+			videoMeshY: -1,
 			videoMeshZ: -6,
 			videoMeshRotationY: 0.288407346410207,
 			videoMeshScale: 0.4,
@@ -114,12 +114,15 @@ class PrayScene {
 			cameraY: 0.2,
 			cameraZ: 7,
 			cameraFov: 35,
+			cameraAngleX: -0.0609999999999999,
+			cameraAngleY: 0,
+			cameraAngleZ: 0.002,
 			pointerParallaxEnabled: true,
-			pointerStrengthX: 0.45,
-			pointerStrengthY: 0.28,
+			pointerStrengthX: 0.795,
+			pointerStrengthY: 0.353,
 			deviceParallaxEnabled: true,
-			deviceStrengthX: 2.2,
-			deviceStrengthY: 1.8,
+			deviceStrengthX: 3.115,
+			deviceStrengthY: 3.213,
 			fogEnabled: true,
 			fogColor: '#000000',
 			fogDensity: 0.048,
@@ -717,6 +720,18 @@ class PrayScene {
 		cameraFolder
 			.add(this.parameters, 'cameraFov', 10, 90, 0.1)
 			.name('FOV')
+			.onChange(() => this.updateCameraSettings())
+		cameraFolder
+			.add(this.parameters, 'cameraAngleX', -0.75, 0.75, 0.001)
+			.name('Angle X')
+			.onChange(() => this.updateCameraSettings())
+		cameraFolder
+			.add(this.parameters, 'cameraAngleY', -0.75, 0.75, 0.001)
+			.name('Angle Y')
+			.onChange(() => this.updateCameraSettings())
+		cameraFolder
+			.add(this.parameters, 'cameraAngleZ', -0.75, 0.75, 0.001)
+			.name('Angle Z')
 			.onChange(() => this.updateCameraSettings())
 		cameraFolder
 			.add(this.parameters, 'pointerParallaxEnabled')
@@ -1997,6 +2012,9 @@ class PrayScene {
 				this.cameraBasePosition.z + this.currentCameraOffset.y * 0.35,
 			)
 			this.camera.lookAt(this.cameraFocusTarget)
+			this.camera.rotateX(this.parameters.cameraAngleX)
+			this.camera.rotateY(this.parameters.cameraAngleY)
+			this.camera.rotateZ(this.parameters.cameraAngleZ)
 		}
 
 		this.renderer.render(this.scene, this.camera)
