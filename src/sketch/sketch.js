@@ -68,6 +68,7 @@ class PrayScene {
 		this.currentCameraOffset = new THREE.Vector2()
 		this.hasDeviceOrientationListener = false
 		this.deviceOrientationPermissionRequested = false
+		this.deviceOrientationBase = null
 		this.parameters = this.loadParameters({
 			backgroundColor: '#000000',
 			voidEnabled: true,
@@ -1628,6 +1629,9 @@ class PrayScene {
 		document.addEventListener('mouseleave', this.handlePointerLeave)
 		this.wrapper.addEventListener('pointerdown', this.requestDeviceOrientationPermission, { passive: true })
 		this.wrapper.addEventListener('touchend', this.requestDeviceOrientationPermission, { passive: true })
+		document.addEventListener('pointerdown', this.requestDeviceOrientationPermission, { passive: true })
+		document.addEventListener('touchend', this.requestDeviceOrientationPermission, { passive: true })
+		document.addEventListener('click', this.requestDeviceOrientationPermission, { passive: true })
 
 		this.updateInteractionSettings()
 	}
@@ -1639,6 +1643,7 @@ class PrayScene {
 
 		if (!this.parameters.deviceParallaxEnabled) {
 			this.targetDeviceOffset.set(0, 0)
+			this.deviceOrientationBase = null
 			this.removeDeviceOrientationListener()
 			return
 		}
@@ -1675,6 +1680,7 @@ class PrayScene {
 		try {
 			const permission = await window.DeviceOrientationEvent.requestPermission()
 			if (permission === 'granted') {
+				this.deviceOrientationBase = null
 				this.addDeviceOrientationListener()
 			}
 		} catch {
@@ -1905,12 +1911,21 @@ class PrayScene {
 	handleDeviceOrientation(event) {
 		if (!this.parameters.deviceParallaxEnabled) return
 
-		const gamma = THREE.MathUtils.clamp(event.gamma || 0, -35, 35) / 35
-		const beta = THREE.MathUtils.clamp((event.beta || 0) - 45, -35, 35) / 35
+		const gamma = event.gamma
+		const beta = event.beta
+
+		if (typeof gamma !== 'number' || typeof beta !== 'number') return
+
+		if (!this.deviceOrientationBase) {
+			this.deviceOrientationBase = { gamma, beta }
+		}
+
+		const relativeGamma = THREE.MathUtils.clamp(gamma - this.deviceOrientationBase.gamma, -24, 24) / 24
+		const relativeBeta = THREE.MathUtils.clamp(beta - this.deviceOrientationBase.beta, -24, 24) / 24
 
 		this.targetDeviceOffset.set(
-			gamma * this.parameters.deviceStrengthX,
-			beta * -this.parameters.deviceStrengthY,
+			relativeGamma * this.parameters.deviceStrengthX,
+			relativeBeta * -this.parameters.deviceStrengthY,
 		)
 	}
 
@@ -1976,6 +1991,9 @@ class PrayScene {
 		document.removeEventListener('mouseleave', this.handlePointerLeave)
 		this.wrapper?.removeEventListener('pointerdown', this.requestDeviceOrientationPermission)
 		this.wrapper?.removeEventListener('touchend', this.requestDeviceOrientationPermission)
+		document.removeEventListener('pointerdown', this.requestDeviceOrientationPermission)
+		document.removeEventListener('touchend', this.requestDeviceOrientationPermission)
+		document.removeEventListener('click', this.requestDeviceOrientationPermission)
 		this.removeDeviceOrientationListener()
 
 		this.model?.traverse((child) => {
@@ -2027,6 +2045,7 @@ class PrayScene {
 		this.sceneGroup = null
 		this.modelGroup = null
 		this.videoGroup = null
+		this.deviceOrientationBase = null
 		this.videoElement = null
 		this.videoTexture = null
 		this.videoMaterial = null
