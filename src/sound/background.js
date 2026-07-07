@@ -193,10 +193,9 @@ class BackgroundSound {
 			${triggerSelector} {
 				animation: pray-sound-spin 7s linear infinite;
 				cursor: pointer;
-				display: inline-grid;
-				place-items: center;
-				width: max-content;
-				height: max-content;
+				display: flex;
+				align-items: center;
+				justify-content: center;
 				transform-origin: center;
 				will-change: transform;
 			}
@@ -206,6 +205,7 @@ class BackgroundSound {
 				width: 28px;
 				height: 28px;
 				color: currentColor;
+				flex: 0 0 auto;
 				transition: transform 180ms ease;
 				transform-origin: center;
 			}
