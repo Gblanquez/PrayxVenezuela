@@ -1,0 +1,12 @@
+*
+{
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+}
+
+[data="rounded"] {
+
+  border-radius: 0.5rem;
+  --smooth-corners: 12;
+
+}

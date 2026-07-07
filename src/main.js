@@ -1,7 +1,15 @@
 import './styles/style.css'
-import { initDonationCheckout } from './payments/stripe-donations'
 import prayScene from './sketch/sketch'
+import backgroundSound from './sound/background'
+import ctaAnimation from './animation/cta'
+import smoothCornersUrl from 'smooth-corners?url';
 
-initDonationCheckout()
+if ('paintWorklet' in CSS) {
+
+  CSS.paintWorklet.addModule(smoothCornersUrl);
+
+}
+
 prayScene.mount()
-
+backgroundSound.mount()
+ctaAnimation.mount()
