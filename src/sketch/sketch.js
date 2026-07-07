@@ -242,6 +242,7 @@ class PrayScene {
 		this.createRenderer()
 		this.setupLoader()
 		this.setupGui()
+		this.applyParameters()
 	}
 
 	createLighting() {
@@ -513,6 +514,7 @@ class PrayScene {
 
 	setupGui() {
 		if (this.gui) return
+		if (window.location.hash !== '#debug') return
 
 		this.gui = new GUI({ title: 'Pray Scene' })
 		const groupFolder = this.gui.addFolder('Scene Group')
@@ -982,6 +984,10 @@ class PrayScene {
 		rainFolder.open()
 		configFolder.open()
 
+		this.saveParameters()
+	}
+
+	applyParameters() {
 		this.updateSceneGroupPosition()
 		this.updateSceneGroupRotation()
 		this.updateSceneGroupScale()
@@ -995,7 +1001,6 @@ class PrayScene {
 		this.updateSceneSpotLight()
 		this.updateRainSettings()
 		this.updateHolderImpactSettings()
-		this.saveParameters()
 	}
 
 	loadParameters(defaultParameters) {
