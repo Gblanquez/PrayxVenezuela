@@ -185,6 +185,7 @@ class PrayScene {
 		this.handlePointerLeave = this.handlePointerLeave.bind(this)
 		this.handleTouchMove = this.handleTouchMove.bind(this)
 		this.handleDeviceOrientation = this.handleDeviceOrientation.bind(this)
+		this.handleDebugModeChange = this.handleDebugModeChange.bind(this)
 		this.requestDeviceOrientationPermission = this.requestDeviceOrientationPermission.bind(this)
 		this.resize = this.resize.bind(this)
 		this.animate = this.animate.bind(this)
@@ -513,9 +514,26 @@ class PrayScene {
 		this.loader.setDRACOLoader(this.dracoLoader)
 	}
 
+	isDebugMode() {
+		const params = new URLSearchParams(window.location.search)
+
+		return window.location.hash === '#debug' || params.has('debug')
+	}
+
+	handleDebugModeChange() {
+		if (this.isDebugMode()) {
+			this.setupGui()
+			this.applyParameters()
+			return
+		}
+
+		this.gui?.destroy()
+		this.gui = null
+	}
+
 	setupGui() {
 		if (this.gui) return
-		if (window.location.hash !== '#debug') return
+		if (!this.isDebugMode()) return
 
 		this.gui = new GUI({ title: 'Pray Scene' })
 		const groupFolder = this.gui.addFolder('Scene Group')
@@ -1632,6 +1650,7 @@ class PrayScene {
 		window.addEventListener('pointermove', this.handlePointerMove, { passive: true })
 		window.addEventListener('touchmove', this.handleTouchMove, { passive: true })
 		window.addEventListener('blur', this.handlePointerLeave)
+		window.addEventListener('hashchange', this.handleDebugModeChange)
 		document.addEventListener('mouseleave', this.handlePointerLeave)
 		this.wrapper.addEventListener('pointerdown', this.requestDeviceOrientationPermission, { passive: true })
 		this.wrapper.addEventListener('touchend', this.requestDeviceOrientationPermission, { passive: true })
@@ -2000,6 +2019,7 @@ class PrayScene {
 		window.removeEventListener('pointermove', this.handlePointerMove)
 		window.removeEventListener('touchmove', this.handleTouchMove)
 		window.removeEventListener('blur', this.handlePointerLeave)
+		window.removeEventListener('hashchange', this.handleDebugModeChange)
 		document.removeEventListener('mouseleave', this.handlePointerLeave)
 		this.wrapper?.removeEventListener('pointerdown', this.requestDeviceOrientationPermission)
 		this.wrapper?.removeEventListener('touchend', this.requestDeviceOrientationPermission)
