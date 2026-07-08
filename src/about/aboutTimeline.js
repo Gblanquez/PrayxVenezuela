@@ -419,10 +419,13 @@ class AboutTimeline {
 		const cameraDistance = Math.max(this.camera.position.z - zPosition, 0.1)
 		const viewportHeight = 2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) * 0.5) * cameraDistance
 		const viewportWidth = viewportHeight * this.camera.aspect
+		const isMobile = window.innerWidth < 768
+		const widthRatio = isMobile ? 0.8 : 0.6
+		const heightRatio = isMobile ? 0.36 : 0.3
 
 		return new THREE.Vector2(
-			(viewportWidth * 0.6) / planeWidth,
-			(viewportHeight * 0.3) / planeHeight,
+			(viewportWidth * widthRatio) / planeWidth,
+			(viewportHeight * heightRatio) / planeHeight,
 		)
 	}
 
