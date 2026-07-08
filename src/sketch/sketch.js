@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
 import GUI from 'lil-gui'
+import AboutTimeline from '../about/aboutTimeline'
 import { createRagingSeaMaterial } from './materials/ragingSeaMaterial'
 import prayModelUrl from '../static/pray.glb?url'
 
@@ -19,6 +20,7 @@ class PrayScene {
 		this.sceneGroup = null
 		this.modelGroup = null
 		this.videoGroup = null
+		this.aboutTimeline = null
 		this.videoElement = null
 		this.videoTexture = null
 		this.videoMaterial = null
@@ -206,6 +208,7 @@ class PrayScene {
 		this.prepareWrapper()
 		this.initScene()
 		this.attachRenderer()
+		this.setupAboutTimeline()
 		this.setupInteractionListeners()
 		this.observeWrapper()
 		this.resize()
@@ -508,6 +511,17 @@ class PrayScene {
 		canvas.style.width = '100%'
 		canvas.style.height = '100%'
 		canvas.style.touchAction = 'none'
+	}
+
+	setupAboutTimeline() {
+		if (this.aboutTimeline || !document.querySelector('.about-section')) return
+
+		this.aboutTimeline = new AboutTimeline()
+		this.aboutTimeline.mount({
+			scene: this.scene,
+			camera: this.camera,
+			wrapper: this.wrapper,
+		})
 	}
 
 	setupLoader() {
@@ -1616,6 +1630,42 @@ class PrayScene {
 		this.videoMaterial.needsUpdate = true
 	}
 
+	updateVideoGroupVisibility(alpha) {
+		if (!this.videoGroup) return
+
+		const clampedAlpha = THREE.MathUtils.clamp(alpha, 0, 1)
+
+		this.videoGroup.visible = clampedAlpha > 0.01
+
+		this.videoGroup.traverse((child) => {
+			if (!child.isMesh) return
+
+			const materials = Array.isArray(child.material) ? child.material : [child.material]
+
+			materials.forEach((material) => {
+				if (!material) return
+
+				if (material === this.videoMaterial) {
+					material.uniforms.uOpacity.value = this.parameters.videoOpacity * clampedAlpha
+					material.depthWrite = clampedAlpha > 0.98
+					return
+				}
+
+				if (typeof material.opacity !== 'number') return
+
+				if (typeof material.userData.prayBaseOpacity !== 'number') {
+					material.userData.prayBaseOpacity = material.opacity
+					material.userData.prayBaseTransparent = material.transparent
+				}
+
+				material.opacity = material.userData.prayBaseOpacity * clampedAlpha
+				material.transparent = true
+				material.depthWrite = clampedAlpha > 0.98
+				material.needsUpdate = true
+			})
+		})
+	}
+
 	updateCameraSettings() {
 		if (!this.camera) return
 
@@ -1998,6 +2048,8 @@ class PrayScene {
 		}
 
 		this.updateRain(delta, elapsed)
+		const aboutAmount = this.aboutTimeline?.update() || 0
+		this.updateVideoGroupVisibility(1 - aboutAmount)
 
 		if (this.camera) {
 			this.cameraFocusTarget.copy(this.cameraLookAt)
@@ -2066,6 +2118,7 @@ class PrayScene {
 		this.videoElement?.load()
 		this.videoTexture?.dispose()
 		this.videoMaterial?.dispose()
+		this.aboutTimeline?.dispose()
 		this.disposeRain()
 		this.holderImpactGeometry?.dispose()
 		this.holderImpactMaterial?.dispose()
@@ -2095,6 +2148,7 @@ class PrayScene {
 		this.sceneGroup = null
 		this.modelGroup = null
 		this.videoGroup = null
+		this.aboutTimeline = null
 		this.deviceOrientationBase = null
 		this.videoElement = null
 		this.videoTexture = null
