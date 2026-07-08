@@ -1,7 +1,14 @@
 import * as THREE from 'three'
+import { gsap } from 'gsap'
+import { SplitText } from 'gsap/SplitText'
+
+gsap.registerPlugin(SplitText)
 
 const planeWidth = 1
 const planeHeight = 0.59
+const closeTriggerSelector = '.about-close-trigger'
+const closeCanvasClass = 'about-close-canvas'
+const closeStyleId = 'pray-about-close-styles'
 
 class AboutTimeline {
 	constructor() {
@@ -19,12 +26,20 @@ class AboutTimeline {
 		this.currentScroll = 0
 		this.previousScroll = 0
 		this.scrollVelocity = 0
+		this.introVelocity = 0
+		this.introTween = null
+		this.introVelocityTween = null
 		this.touchY = 0
 		this.selectedItem = null
+		this.heroSplit = null
 		this.isEnabled = false
+		this.closeHideTween = null
 		this.triggers = []
+		this.closeTriggers = []
+		this.closeIconStates = new Map()
 		this.handlePointerDown = this.handlePointerDown.bind(this)
 		this.handleTriggerClick = this.handleTriggerClick.bind(this)
+		this.handleCloseClick = this.handleCloseClick.bind(this)
 		this.handleWheel = this.handleWheel.bind(this)
 		this.handleTouchStart = this.handleTouchStart.bind(this)
 		this.handleTouchMove = this.handleTouchMove.bind(this)
@@ -44,6 +59,7 @@ class AboutTimeline {
 		this.group.position.set(0, 0.15, 0)
 		this.scene.add(this.group)
 
+		this.injectCloseStyles()
 		this.createItems()
 		this.setupTriggers()
 		window.addEventListener('pointerdown', this.handlePointerDown, { passive: true })
@@ -57,12 +73,33 @@ class AboutTimeline {
 		this.triggers.forEach((trigger) => {
 			trigger.addEventListener('click', this.handleTriggerClick)
 		})
+
+		this.closeTriggers = Array.from(document.querySelectorAll(closeTriggerSelector))
+		this.closeTriggers.forEach((trigger) => {
+			trigger.addEventListener('click', this.handleCloseClick)
+			trigger.setAttribute('role', trigger.getAttribute('role') || 'button')
+			trigger.setAttribute('aria-label', trigger.getAttribute('aria-label') || 'Close about section')
+			const canvas = this.ensureCloseCanvas(trigger)
+			this.closeIconStates.set(trigger, {
+				ring: 0,
+				lineA: 0,
+				lineB: 0,
+			})
+			this.drawCloseIcon(canvas, this.closeIconStates.get(trigger))
+			if (!this.isEnabled) {
+				trigger.style.display = 'none'
+				trigger.style.pointerEvents = 'none'
+			}
+		})
 	}
 
 	handleTriggerClick(event) {
 		event.preventDefault()
 
 		this.isEnabled = true
+		this.startIntroAnimation()
+		this.showCloseTriggers()
+		this.animateHeroTextOut()
 		this.clearSelection()
 		const sectionTop = this.section.getBoundingClientRect().top + window.scrollY
 
@@ -70,6 +107,283 @@ class AboutTimeline {
 			top: sectionTop,
 			behavior: 'smooth',
 		})
+	}
+
+	handleCloseClick(event) {
+		event.preventDefault()
+
+		this.isEnabled = false
+		this.stopIntroAnimation()
+		this.clearSelection()
+		this.animateHeroTextIn()
+		this.hideCloseTriggers()
+	}
+
+	startIntroAnimation() {
+		this.introTween?.kill()
+		this.introVelocityTween?.kill()
+		this.introVelocity = 1.1
+		this.scrollVelocity += 0.4
+
+		this.items.forEach((item) => {
+			item.introProgress = 0
+		})
+
+		this.introTween = gsap.to(this.items, {
+			introProgress: 1,
+			duration: 2.2,
+			ease: 'power3.out',
+			stagger: 0.1,
+			onComplete: () => {
+				this.introTween = null
+			},
+		})
+		this.introVelocityTween = gsap.to(this, {
+			introVelocity: 0,
+			duration: 2.2,
+			ease: 'power2.out',
+			onComplete: () => {
+				this.introVelocityTween = null
+			},
+		})
+	}
+
+	stopIntroAnimation() {
+		this.introTween?.kill()
+		this.introVelocityTween?.kill()
+		this.introTween = null
+		this.introVelocityTween = null
+		this.introVelocity = 0
+
+		this.items.forEach((item) => {
+			item.introProgress = 0
+		})
+	}
+
+	showCloseTriggers() {
+		this.closeHideTween?.kill()
+		this.closeHideTween = null
+
+		this.closeTriggers.forEach((trigger) => {
+			trigger.style.display = 'flex'
+			gsap.set(trigger, {
+				autoAlpha: 0,
+				pointerEvents: 'auto',
+			})
+			const state = this.closeIconStates.get(trigger)
+			const canvas = trigger.querySelector(`canvas.${closeCanvasClass}`)
+			if (!state || !canvas) return
+
+			gsap.killTweensOf(state)
+			state.ring = 0
+			state.lineA = 0
+			state.lineB = 0
+			this.drawCloseIcon(canvas, state)
+
+			gsap.to(trigger, {
+				autoAlpha: 1,
+				duration: 0.18,
+				delay: 0.05,
+				ease: 'power2.out',
+			})
+
+			gsap.to(state, {
+				ring: 1,
+				duration: 1.6,
+				delay: 0.05,
+				ease: 'expo.out',
+				onUpdate: () => this.drawCloseIcon(canvas, state),
+			})
+			gsap.to(state, {
+				lineA: 1,
+				duration: 1.6,
+				delay: 0.1,
+				ease: 'expo.out',
+				onUpdate: () => this.drawCloseIcon(canvas, state),
+			})
+			gsap.to(state, {
+				lineB: 1,
+				duration: 1.6,
+				delay: 0.15,
+				ease: 'expo.out',
+				onUpdate: () => this.drawCloseIcon(canvas, state),
+			})
+		})
+	}
+
+	hideCloseTriggers() {
+		this.closeHideTween?.kill()
+		const timeline = gsap.timeline({
+			delay: 0.2,
+			onComplete: () => {
+				this.closeTriggers.forEach((trigger) => {
+					trigger.style.display = 'none'
+					trigger.style.pointerEvents = 'none'
+				})
+				this.closeHideTween = null
+			},
+		})
+
+		this.closeTriggers.forEach((trigger) => {
+			const state = this.closeIconStates.get(trigger)
+			const canvas = trigger.querySelector(`canvas.${closeCanvasClass}`)
+			if (!state || !canvas) return
+
+			gsap.killTweensOf(state)
+			timeline
+				.to(state, {
+					lineB: 0,
+					duration: 1.05,
+					ease: 'expo.out',
+					onUpdate: () => this.drawCloseIcon(canvas, state),
+				}, 0)
+				.to(state, {
+					lineA: 0,
+					duration: 1.05,
+					ease: 'expo.out',
+					onUpdate: () => this.drawCloseIcon(canvas, state),
+				}, 0.05)
+				.to(state, {
+					ring: 0,
+					duration: 1.15,
+					ease: 'expo.out',
+					onUpdate: () => this.drawCloseIcon(canvas, state),
+				}, 0.1)
+				.to(trigger, {
+					autoAlpha: 0,
+					duration: 0.24,
+					ease: 'power2.out',
+				}, 0.84)
+		})
+
+		this.closeHideTween = timeline
+	}
+
+	animateHeroTextOut() {
+		this.ensureHeroSplit()
+
+		if (!this.heroSplit?.lines?.length) return
+
+		gsap.to(this.heroSplit.lines, {
+			y: '-110%',
+			duration: 1.05,
+			ease: 'power3.inOut',
+			stagger: 0.045,
+		})
+	}
+
+	animateHeroTextIn() {
+		if (!this.heroSplit?.lines?.length) return
+
+		gsap.to(this.heroSplit.lines, {
+			y: '0%',
+			duration: 0.95,
+			ease: 'power3.inOut',
+			stagger: 0.035,
+		})
+	}
+
+	ensureHeroSplit() {
+		if (this.heroSplit) return
+
+		const elements = Array.from(document.querySelectorAll(
+			'[data-a="hero-title"], [data-a="hero-label"], [data-a="hero-body"]',
+		))
+
+		if (!elements.length) return
+
+		this.heroSplit = SplitText.create(elements, {
+			type: 'lines',
+			mask: 'lines',
+			linesClass: 'hero-split-line',
+		})
+
+		gsap.set(this.heroSplit.lines, {
+			display: 'block',
+			willChange: 'transform',
+		})
+	}
+
+	ensureCloseCanvas(trigger) {
+		let canvas = trigger.querySelector(`canvas.${closeCanvasClass}`)
+		if (canvas) return canvas
+
+		canvas = document.createElement('canvas')
+		canvas.className = closeCanvasClass
+		canvas.width = 100
+		canvas.height = 100
+		canvas.setAttribute('aria-hidden', 'true')
+		trigger.appendChild(canvas)
+
+		return canvas
+	}
+
+	drawCloseIcon(canvas, state = { ring: 1, lineA: 1, lineB: 1 }) {
+		const context = canvas.getContext('2d')
+		const size = canvas.width
+		const center = size * 0.5
+		const scale = size / 19
+		const color = '#ffffff'
+
+		context.clearRect(0, 0, size, size)
+		context.save()
+		context.translate(center, center)
+		context.strokeStyle = color
+		context.lineWidth = 0.92 * scale
+		context.lineCap = 'round'
+		context.lineJoin = 'round'
+
+		context.beginPath()
+		context.arc(0, 0, 8.2 * scale, -Math.PI * 0.5, -Math.PI * 0.5 + Math.PI * 2 * state.ring)
+		context.stroke()
+
+		context.beginPath()
+		this.drawCenteredLine(context, -1.8 * scale, -1.8 * scale, 1.8 * scale, 1.8 * scale, state.lineA)
+		this.drawCenteredLine(context, 1.8 * scale, -1.8 * scale, -1.8 * scale, 1.8 * scale, state.lineB)
+		context.stroke()
+		context.restore()
+	}
+
+	drawCenteredLine(context, x1, y1, x2, y2, progress) {
+		const centerX = (x1 + x2) * 0.5
+		const centerY = (y1 + y2) * 0.5
+		const halfX = (x2 - x1) * 0.5 * progress
+		const halfY = (y2 - y1) * 0.5 * progress
+
+		context.moveTo(centerX - halfX, centerY - halfY)
+		context.lineTo(centerX + halfX, centerY + halfY)
+	}
+
+	injectCloseStyles() {
+		if (document.getElementById(closeStyleId)) return
+
+		const style = document.createElement('style')
+		style.id = closeStyleId
+		style.textContent = `
+			${closeTriggerSelector} {
+				cursor: pointer;
+				align-items: center;
+				justify-content: center;
+				transform-origin: center;
+			}
+
+			${closeTriggerSelector} .${closeCanvasClass} {
+				display: block;
+				width: 28px;
+				height: 28px;
+				color: #ffffff;
+				flex: 0 0 auto;
+				transition: transform 180ms ease;
+				transform-origin: center;
+			}
+
+			${closeTriggerSelector}:hover .${closeCanvasClass},
+			${closeTriggerSelector}:focus-visible .${closeCanvasClass} {
+				transform: scale(1.05);
+			}
+		`
+
+		document.head.appendChild(style)
 	}
 
 	createItems() {
@@ -109,6 +423,7 @@ class AboutTimeline {
 				datePlane,
 				index,
 				expandProgress: 0,
+				introProgress: 0,
 			}
 
 			video.addEventListener('loadedmetadata', () => {
@@ -349,7 +664,7 @@ class AboutTimeline {
 		const spacing = 4.4
 		const travelLength = Math.max(this.items.length * spacing, spacing)
 		const scrollDistance = (rawProgress * travelLength) - this.currentScroll
-		const waveVelocity = THREE.MathUtils.clamp(this.scrollVelocity, -0.42, 0.42)
+		const waveVelocity = THREE.MathUtils.clamp(this.scrollVelocity + this.introVelocity, -0.48, 0.48)
 		const waveTime = performance.now() * 0.001
 		const selectedAmount = this.selectedItem?.expandProgress || 0
 
@@ -384,22 +699,31 @@ class AboutTimeline {
 				y,
 				worldZ,
 			)
+			const introProgress = this.easeValue(item.introProgress)
+			const introRemaining = 1 - introProgress
+			const introPosition = new THREE.Vector3(
+				0.18,
+				0.02,
+				-16 - item.index * 0.12,
+			).lerp(restingPosition, introProgress)
+			const introRotationX = Math.PI * 0.25 * introRemaining
+			const introBendPulse = Math.sin(introProgress * Math.PI) * 0.34
 
-			item.mesh.position.copy(restingPosition).lerp(expandedPosition, this.easeValue(item.expandProgress))
+			item.mesh.position.copy(introPosition).lerp(expandedPosition, this.easeValue(item.expandProgress))
 			item.mesh.scale.setScalar(THREE.MathUtils.lerp(scale, 1, cornerAverage))
 			item.mesh.rotation.set(
-				0,
+				THREE.MathUtils.lerp(introRotationX, 0, this.easeValue(item.expandProgress)),
 				THREE.MathUtils.lerp(x * -0.08 * (1 - centerFade), 0, this.easeValue(item.expandProgress)),
 				0,
 			)
-			item.material.uniforms.uOpacity.value = opacity
+			item.material.uniforms.uOpacity.value = opacity * introProgress
 			item.material.uniforms.uFogColor.value.copy(this.scene?.fog?.color || new THREE.Color('#000000'))
 			item.material.uniforms.uFogDensity.value = this.scene?.fog?.density || 0.048
 			item.material.uniforms.uTime.value = waveTime + item.index * 0.33
-			item.material.uniforms.uCornerTopLeft.value = waveVelocity * 0.95
-			item.material.uniforms.uCornerTopRight.value = waveVelocity * -0.76
-			item.material.uniforms.uCornerBottomLeft.value = waveVelocity * -0.62
-			item.material.uniforms.uCornerBottomRight.value = waveVelocity * 0.84
+			item.material.uniforms.uCornerTopLeft.value = (waveVelocity * 0.95) + introBendPulse
+			item.material.uniforms.uCornerTopRight.value = (waveVelocity * -0.76) - introBendPulse * 0.72
+			item.material.uniforms.uCornerBottomLeft.value = (waveVelocity * -0.62) - introBendPulse * 0.48
+			item.material.uniforms.uCornerBottomRight.value = (waveVelocity * 0.84) + introBendPulse * 0.62
 			item.material.uniforms.uExpandScale.value.copy(expandedScale)
 			item.material.uniforms.uExpandTopRight.value = cornerTopRight
 			item.material.uniforms.uExpandBottomRight.value = cornerBottomRight
@@ -495,6 +819,11 @@ class AboutTimeline {
 		this.triggers?.forEach((trigger) => {
 			trigger.removeEventListener('click', this.handleTriggerClick)
 		})
+		this.closeTriggers?.forEach((trigger) => {
+			trigger.removeEventListener('click', this.handleCloseClick)
+		})
+		this.closeHideTween?.kill()
+		this.heroSplit?.revert()
 		this.clearSelection()
 
 		this.items.forEach((item) => {
