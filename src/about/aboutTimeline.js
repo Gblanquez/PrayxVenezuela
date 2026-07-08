@@ -17,6 +17,7 @@ class AboutTimeline {
 		this.scene = null
 		this.camera = null
 		this.group = null
+		this.contentOpenWrapper = null
 		this.items = []
 		this.raycaster = new THREE.Raycaster()
 		this.pointer = new THREE.Vector2()
@@ -32,6 +33,8 @@ class AboutTimeline {
 		this.touchY = 0
 		this.selectedItem = null
 		this.heroSplit = null
+		this.openContentSplit = null
+		this.openContentTimeline = null
 		this.isEnabled = false
 		this.closeHideTween = null
 		this.triggers = []
@@ -53,6 +56,7 @@ class AboutTimeline {
 		this.scene = scene
 		this.camera = camera
 		this.wrapper = wrapper
+		this.contentOpenWrapper = document.querySelector('.content-open-wrapper')
 		this.group = new THREE.Group()
 		this.group.name = 'about-timeline'
 		this.group.visible = false
@@ -60,6 +64,7 @@ class AboutTimeline {
 		this.scene.add(this.group)
 
 		this.injectCloseStyles()
+		this.hideOpenContent()
 		this.createItems()
 		this.setupTriggers()
 		window.addEventListener('pointerdown', this.handlePointerDown, { passive: true })
@@ -96,11 +101,15 @@ class AboutTimeline {
 	handleTriggerClick(event) {
 		event.preventDefault()
 
+		if (this.isEnabled) return
+
 		this.isEnabled = true
+		this.updateAboutTriggerState()
 		this.startIntroAnimation()
 		this.showCloseTriggers()
 		this.animateHeroTextOut()
-		this.clearSelection()
+		this.animateAboutTextOut()
+		this.clearSelection({ animateContent: false, deferPlane: false })
 		const sectionTop = this.section.getBoundingClientRect().top + window.scrollY
 
 		window.scrollTo({
@@ -112,10 +121,17 @@ class AboutTimeline {
 	handleCloseClick(event) {
 		event.preventDefault()
 
+		if (this.selectedItem) {
+			this.clearSelection()
+			return
+		}
+
 		this.isEnabled = false
+		this.updateAboutTriggerState()
 		this.stopIntroAnimation()
 		this.clearSelection()
 		this.animateHeroTextIn()
+		this.animateAboutTextIn()
 		this.hideCloseTriggers()
 	}
 
@@ -280,6 +296,45 @@ class AboutTimeline {
 			duration: 0.95,
 			ease: 'power3.inOut',
 			stagger: 0.035,
+		})
+	}
+
+	animateAboutTextOut() {
+		const targets = Array.from(document.querySelectorAll('[about="text"]'))
+		if (!targets.length) return
+
+		gsap.to(targets, {
+			y: '-110%',
+			opacity: 0,
+			duration: 0.85,
+			ease: 'power3.inOut',
+			stagger: 0.035,
+			overwrite: true,
+		})
+	}
+
+	animateAboutTextIn() {
+		const targets = Array.from(document.querySelectorAll('[about="text"]'))
+		if (!targets.length) return
+
+		gsap.fromTo(targets, {
+			y: '110%',
+			opacity: 0,
+		}, {
+			y: '0%',
+			opacity: 1,
+			duration: 0.9,
+			ease: 'power3.out',
+			stagger: 0.035,
+			overwrite: true,
+		})
+	}
+
+	updateAboutTriggerState() {
+		this.triggers.forEach((trigger) => {
+			trigger.classList.toggle('is-about-active', this.isEnabled)
+			trigger.style.pointerEvents = this.isEnabled ? 'none' : ''
+			trigger.setAttribute('aria-disabled', this.isEnabled ? 'true' : 'false')
 		})
 	}
 
@@ -744,7 +799,7 @@ class AboutTimeline {
 		const viewportHeight = 2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) * 0.5) * cameraDistance
 		const viewportWidth = viewportHeight * this.camera.aspect
 		const isMobile = window.innerWidth < 768
-		const widthRatio = isMobile ? 0.9 : 0.6
+		const widthRatio = isMobile ? 0.9 : 0.5
 		const heightRatio = 0.3
 
 		return new THREE.Vector2(
@@ -790,25 +845,164 @@ class AboutTimeline {
 			return
 		}
 
-		this.clearSelection()
+		this.clearSelection({ animateContent: false, deferPlane: false })
 		this.selectedItem = item
 		item.element.classList.add('is-about-active')
+		this.updateCloseTriggerMode()
+		this.showOpenContent(item)
+	}
 
-		if (item.explanationElement) {
-			item.explanationElement.style.display = 'block'
+	clearSelection({ animateContent = true, deferPlane = true } = {}) {
+		const item = this.selectedItem
+
+		if (!item) {
+			this.hideOpenContent(false)
+			this.updateCloseTriggerMode()
+			return
+		}
+
+		const finishSelectionClear = () => {
+			item.element.classList.remove('is-about-active')
+			if (this.selectedItem === item) {
+				this.selectedItem = null
+			}
+			this.updateCloseTriggerMode()
+		}
+
+		if (animateContent && deferPlane && this.contentOpenWrapper?.innerHTML.trim()) {
+			this.hideOpenContent(true, finishSelectionClear)
+			return
+		}
+
+		item.element.classList.remove('is-about-active')
+		this.hideOpenContent(false)
+		if (this.selectedItem === item) {
+			this.selectedItem = null
+		}
+		this.updateCloseTriggerMode()
+	}
+
+	updateCloseTriggerMode() {
+		this.closeTriggers.forEach((trigger) => {
+			trigger.classList.toggle('is-plane-open', Boolean(this.selectedItem))
+		})
+	}
+
+	showOpenContent(item) {
+		if (!this.contentOpenWrapper || !item.explanationElement) return
+
+		this.contentOpenWrapper.innerHTML = item.explanationElement.innerHTML
+		this.contentOpenWrapper.style.display = 'flex'
+		this.contentOpenWrapper.setAttribute('aria-hidden', 'false')
+		this.animateOpenContentIn()
+	}
+
+	hideOpenContent(animate = false, onComplete = null) {
+		if (!this.contentOpenWrapper) return
+
+		this.openContentTimeline?.kill()
+
+		if (!animate || !this.contentOpenWrapper.innerHTML.trim()) {
+			this.clearOpenContentNow()
+			onComplete?.()
+			return
+		}
+
+		const lines = Array.from(this.contentOpenWrapper.querySelectorAll('[collection="content"]'))
+		const contentLines = this.openContentSplit?.lines || []
+		const targets = contentLines.length ? contentLines : lines
+		const line = this.contentOpenWrapper.querySelector('.collection-line')
+
+		if (line) {
+			gsap.set(line, { transformOrigin: 'right center' })
+		}
+
+		this.openContentTimeline = gsap.timeline({
+			onComplete: () => {
+				this.clearOpenContentNow()
+				onComplete?.()
+			},
+		})
+
+		if (targets.length) {
+			this.openContentTimeline.to(targets, {
+				y: '-110%',
+				duration: 0.8,
+				ease: 'power3.in',
+				stagger: 0.015,
+			}, 0)
+		}
+
+		if (line) {
+			this.openContentTimeline.to(line, {
+				scaleX: 0,
+				duration: 0.7,
+				ease: 'power3.inOut',
+			}, 0.04)
 		}
 	}
 
-	clearSelection() {
-		if (!this.selectedItem) return
+	animateOpenContentIn() {
+		if (!this.contentOpenWrapper) return
 
-		this.selectedItem.element.classList.remove('is-about-active')
+		this.openContentTimeline?.kill()
+		this.openContentSplit?.revert()
+		this.openContentSplit = null
 
-		if (this.selectedItem.explanationElement) {
-			this.selectedItem.explanationElement.style.display = 'none'
+		const line = this.contentOpenWrapper.querySelector('.collection-line')
+		const contentTargets = Array.from(this.contentOpenWrapper.querySelectorAll('[collection="content"]'))
+
+		if (line) {
+			gsap.set(line, {
+				scaleX: 0,
+				transformOrigin: 'left center',
+			})
 		}
 
-		this.selectedItem = null
+		if (contentTargets.length) {
+			this.openContentSplit = SplitText.create(contentTargets, {
+				type: 'lines',
+				mask: 'lines',
+				linesClass: 'about-content-line',
+			})
+
+			gsap.set(this.openContentSplit.lines, {
+				y: '110%',
+				display: 'block',
+				willChange: 'transform',
+			})
+		}
+
+		this.openContentTimeline = gsap.timeline()
+
+		if (line) {
+			this.openContentTimeline.to(line, {
+				scaleX: 1,
+				duration: 0.82,
+				ease: 'power3.out',
+			}, 0)
+		}
+
+		if (this.openContentSplit?.lines?.length) {
+			this.openContentTimeline.to(this.openContentSplit.lines, {
+				y: '0%',
+				duration: 1.2,
+				ease: 'power3.out',
+				stagger: 0.02,
+			}, 0.12)
+		}
+	}
+
+	clearOpenContentNow() {
+		if (!this.contentOpenWrapper) return
+
+		this.openContentTimeline?.kill()
+		this.openContentTimeline = null
+		this.openContentSplit?.revert()
+		this.openContentSplit = null
+		this.contentOpenWrapper.innerHTML = ''
+		this.contentOpenWrapper.style.display = 'none'
+		this.contentOpenWrapper.setAttribute('aria-hidden', 'true')
 	}
 
 	dispose() {
@@ -824,7 +1018,9 @@ class AboutTimeline {
 		})
 		this.closeHideTween?.kill()
 		this.heroSplit?.revert()
-		this.clearSelection()
+		this.openContentTimeline?.kill()
+		this.openContentSplit?.revert()
+		this.clearSelection({ animateContent: false, deferPlane: false })
 
 		this.items.forEach((item) => {
 			item.video.pause()
