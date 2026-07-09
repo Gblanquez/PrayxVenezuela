@@ -26,6 +26,8 @@ class PrayScene {
 		this.videoTexture = null
 		this.videoMaterial = null
 		this.videoGroupDissolveProgress = 0
+		this.videoTextureRevealProgress = 0
+		this.videoTextureRevealDuration = 1.8
 		this.videoFrameSize = new THREE.Vector2(16, 9)
 		this.videoMeshBoundsMin = new THREE.Vector2(-1, -1)
 		this.videoMeshBoundsSize = new THREE.Vector2(2, 2)
@@ -68,6 +70,9 @@ class PrayScene {
 		this.cameraLookAt = new THREE.Vector3(0, 0, 0)
 		this.cameraFocusTarget = new THREE.Vector3()
 		this.cameraForward = new THREE.Vector3()
+		this.cameraEntryProgress = 0
+		this.cameraEntryDuration = 4.8
+		this.cameraEntryOffset = new THREE.Vector3(0, 10, 7.5)
 		this.aboutCameraProgress = 0
 		this.targetPointerOffset = new THREE.Vector2()
 		this.targetDeviceOffset = new THREE.Vector2()
@@ -1508,6 +1513,7 @@ class PrayScene {
 				uGrayscale: { value: this.parameters.videoGrayscale },
 				uRotation: { value: this.parameters.videoRotation },
 				uDissolveProgress: { value: 0 },
+				uTextureRevealProgress: { value: 0 },
 				uDissolveScale: { value: 2.35 },
 				uDissolveEdge: { value: 0.075 },
 				uDissolveEdgeColor: { value: new THREE.Color('#f8fbff') },
@@ -1535,6 +1541,7 @@ class PrayScene {
 				uniform float uGrayscale;
 				uniform float uRotation;
 				uniform float uDissolveProgress;
+				uniform float uTextureRevealProgress;
 				uniform float uDissolveScale;
 				uniform float uDissolveEdge;
 				uniform vec3 uDissolveEdgeColor;
@@ -1606,11 +1613,16 @@ class PrayScene {
 					videoColor.rgb = mix(videoColor.rgb, vec3(grayscale), uGrayscale);
 					videoColor.rgb *= uBrightness;
 					float dissolve = dissolveNoise(vWorldPosition * uDissolveScale + vec3(0.0, uDissolveProgress * 0.65, 0.0));
+					float revealCutoff = 1.0 - uTextureRevealProgress;
+					float revealAlpha = smoothstep(revealCutoff - uDissolveEdge, revealCutoff + uDissolveEdge, dissolve);
+					float revealRim = 1.0 - smoothstep(0.0, uDissolveEdge * 1.45, abs(dissolve - revealCutoff));
 					float dissolveAlpha = smoothstep(uDissolveProgress - uDissolveEdge, uDissolveProgress + uDissolveEdge, dissolve);
 					float dissolveOpacity = 1.0 - smoothstep(0.16, 0.96, uDissolveProgress);
 					float dissolveRim = 1.0 - smoothstep(0.0, uDissolveEdge, abs(dissolve - uDissolveProgress));
+					videoColor.rgb = mix(videoColor.rgb, uDissolveEdgeColor, revealRim * (1.0 - uTextureRevealProgress) * 0.5);
 					videoColor.rgb = mix(videoColor.rgb, uDissolveEdgeColor, dissolveRim * uDissolveProgress * 0.65);
 					videoColor.a *= uOpacity;
+					videoColor.a *= revealAlpha;
 					videoColor.a *= dissolveAlpha;
 					videoColor.a *= dissolveOpacity;
 
@@ -1686,6 +1698,7 @@ class PrayScene {
 		this.videoMaterial.uniforms.uBrightness.value = this.parameters.videoEmissiveIntensity
 		this.videoMaterial.uniforms.uGrayscale.value = this.parameters.videoGrayscale
 		this.videoMaterial.uniforms.uRotation.value = this.parameters.videoRotation
+		this.videoMaterial.uniforms.uTextureRevealProgress.value = this.easeOutCubic(this.videoTextureRevealProgress)
 		this.videoMaterial.transparent = this.parameters.videoOpacity < 1
 		this.videoMaterial.toneMapped = this.parameters.videoToneMapped
 		this.videoMaterial.needsUpdate = true
@@ -2282,6 +2295,11 @@ diffuseColor.a *= prayDissolveOpacity;
 		this.animate()
 	}
 
+	easeOutCubic(value) {
+		const clamped = THREE.MathUtils.clamp(value, 0, 1)
+		return 1 - Math.pow(1 - clamped, 3)
+	}
+
 	animate(timestamp) {
 		this.rafId = requestAnimationFrame(this.animate)
 
@@ -2307,6 +2325,17 @@ diffuseColor.a *= prayDissolveOpacity;
 		this.updateRain(delta, elapsed)
 		const aboutAmount = this.aboutTimeline?.update() || 0
 		this.aboutCameraProgress += (aboutAmount - this.aboutCameraProgress) * 0.025
+		this.cameraEntryProgress = Math.min(
+			1,
+			this.cameraEntryProgress + (delta / Math.max(this.cameraEntryDuration, 0.001)),
+		)
+		if (this.videoMaterial && this.videoTextureRevealProgress < 1) {
+			this.videoTextureRevealProgress = Math.min(
+				1,
+				this.videoTextureRevealProgress + (delta / Math.max(this.videoTextureRevealDuration, 0.001)),
+			)
+			this.videoMaterial.uniforms.uTextureRevealProgress.value = this.easeOutCubic(this.videoTextureRevealProgress)
+		}
 		this.updateVideoGroupVisibility(1 - aboutAmount)
 
 		if (this.camera) {
@@ -2316,11 +2345,15 @@ diffuseColor.a *= prayDissolveOpacity;
 				this.videoGroup.getWorldPosition(this.cameraFocusTarget)
 			}
 
+			const entryEase = this.easeOutCubic(this.cameraEntryProgress)
+			const entryRemaining = 1 - entryEase
+
 			this.camera.position.set(
 				this.cameraBasePosition.x + this.currentCameraOffset.x,
 				this.cameraBasePosition.y + this.currentCameraOffset.y,
 				this.cameraBasePosition.z + this.currentCameraOffset.y * 0.35,
 			)
+			this.camera.position.addScaledVector(this.cameraEntryOffset, entryRemaining)
 			this.camera.lookAt(this.cameraFocusTarget)
 			this.camera.getWorldDirection(this.cameraForward)
 			this.camera.position.addScaledVector(this.cameraForward, this.aboutCameraProgress * 1.05)
