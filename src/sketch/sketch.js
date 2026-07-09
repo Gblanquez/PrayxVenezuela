@@ -73,8 +73,11 @@ class PrayScene {
 		this.combinedCameraOffset = new THREE.Vector2()
 		this.currentCameraOffset = new THREE.Vector2()
 		this.hasDeviceOrientationListener = false
+		this.hasDeviceMotionListener = false
 		this.deviceOrientationPermissionRequested = false
 		this.deviceOrientationBase = null
+		this.deviceMotionBase = null
+		this.lastDeviceOrientationTime = 0
 		this.parameters = this.loadParameters({
 			backgroundColor: '#000000',
 			voidEnabled: true,
@@ -193,6 +196,7 @@ class PrayScene {
 		this.handlePointerLeave = this.handlePointerLeave.bind(this)
 		this.handleTouchMove = this.handleTouchMove.bind(this)
 		this.handleDeviceOrientation = this.handleDeviceOrientation.bind(this)
+		this.handleDeviceMotion = this.handleDeviceMotion.bind(this)
 		this.handleDebugModeChange = this.handleDebugModeChange.bind(this)
 		this.requestDeviceOrientationPermission = this.requestDeviceOrientationPermission.bind(this)
 		this.resize = this.resize.bind(this)
@@ -1779,8 +1783,10 @@ class PrayScene {
 		window.addEventListener('hashchange', this.handleDebugModeChange)
 		document.addEventListener('mouseleave', this.handlePointerLeave)
 		this.wrapper.addEventListener('pointerdown', this.requestDeviceOrientationPermission, { passive: true })
+		this.wrapper.addEventListener('touchstart', this.requestDeviceOrientationPermission, { passive: true })
 		this.wrapper.addEventListener('touchend', this.requestDeviceOrientationPermission, { passive: true })
 		document.addEventListener('pointerdown', this.requestDeviceOrientationPermission, { passive: true })
+		document.addEventListener('touchstart', this.requestDeviceOrientationPermission, { passive: true })
 		document.addEventListener('touchend', this.requestDeviceOrientationPermission, { passive: true })
 		document.addEventListener('click', this.requestDeviceOrientationPermission, { passive: true })
 
@@ -1795,33 +1801,55 @@ class PrayScene {
 		if (!this.parameters.deviceParallaxEnabled) {
 			this.targetDeviceOffset.set(0, 0)
 			this.deviceOrientationBase = null
+			this.deviceMotionBase = null
 			this.removeDeviceOrientationListener()
 			return
 		}
 
 		this.addDeviceOrientationListener()
+		this.addDeviceMotionListener()
 	}
 
 	addDeviceOrientationListener() {
 		if (this.hasDeviceOrientationListener || !window.DeviceOrientationEvent) return
 
 		window.addEventListener('deviceorientation', this.handleDeviceOrientation, { passive: true })
+		window.addEventListener('deviceorientationabsolute', this.handleDeviceOrientation, { passive: true })
 		this.hasDeviceOrientationListener = true
+		this.updateDeviceParallaxState({ orientationListener: true })
 	}
 
 	removeDeviceOrientationListener() {
-		if (!this.hasDeviceOrientationListener) return
+		if (!this.hasDeviceOrientationListener) {
+			this.removeDeviceMotionListener()
+			return
+		}
 
 		window.removeEventListener('deviceorientation', this.handleDeviceOrientation)
+		window.removeEventListener('deviceorientationabsolute', this.handleDeviceOrientation)
 		this.hasDeviceOrientationListener = false
+		this.removeDeviceMotionListener()
+	}
+
+	addDeviceMotionListener() {
+		if (this.hasDeviceMotionListener || !window.DeviceMotionEvent) return
+
+		window.addEventListener('devicemotion', this.handleDeviceMotion, { passive: true })
+		this.hasDeviceMotionListener = true
+		this.updateDeviceParallaxState({ motionListener: true })
+	}
+
+	removeDeviceMotionListener() {
+		if (!this.hasDeviceMotionListener) return
+
+		window.removeEventListener('devicemotion', this.handleDeviceMotion)
+		this.hasDeviceMotionListener = false
 	}
 
 	async requestDeviceOrientationPermission() {
 		if (
 			this.deviceOrientationPermissionRequested ||
-			!this.parameters.deviceParallaxEnabled ||
-			!window.DeviceOrientationEvent ||
-			typeof window.DeviceOrientationEvent.requestPermission !== 'function'
+			!this.parameters.deviceParallaxEnabled
 		) {
 			return
 		}
@@ -1829,13 +1857,37 @@ class PrayScene {
 		this.deviceOrientationPermissionRequested = true
 
 		try {
-			const permission = await window.DeviceOrientationEvent.requestPermission()
-			if (permission === 'granted') {
+			const orientationPermission = typeof window.DeviceOrientationEvent?.requestPermission === 'function'
+				? await window.DeviceOrientationEvent.requestPermission()
+				: 'granted'
+			const motionPermission = typeof window.DeviceMotionEvent?.requestPermission === 'function'
+				? await window.DeviceMotionEvent.requestPermission()
+				: 'granted'
+
+			this.updateDeviceParallaxState({
+				orientationPermission,
+				motionPermission,
+			})
+
+			if (orientationPermission === 'granted' || motionPermission === 'granted') {
 				this.deviceOrientationBase = null
+				this.deviceMotionBase = null
 				this.addDeviceOrientationListener()
+				this.addDeviceMotionListener()
 			}
 		} catch {
 			this.targetDeviceOffset.set(0, 0)
+			this.updateDeviceParallaxState({ permissionError: true })
+		}
+	}
+
+	updateDeviceParallaxState(values) {
+		window.__prayDeviceParallaxState = {
+			...(window.__prayDeviceParallaxState || {}),
+			...values,
+			enabled: this.parameters.deviceParallaxEnabled,
+			hasOrientationListener: this.hasDeviceOrientationListener,
+			hasMotionListener: this.hasDeviceMotionListener,
 		}
 	}
 
@@ -2171,6 +2223,12 @@ diffuseColor.a *= prayDissolveOpacity;
 		const beta = event.beta
 
 		if (typeof gamma !== 'number' || typeof beta !== 'number') return
+		this.lastDeviceOrientationTime = performance.now()
+		this.updateDeviceParallaxState({
+			lastOrientationEvent: this.lastDeviceOrientationTime,
+			gamma,
+			beta,
+		})
 
 		if (!this.deviceOrientationBase) {
 			this.deviceOrientationBase = { gamma, beta }
@@ -2182,6 +2240,36 @@ diffuseColor.a *= prayDissolveOpacity;
 		this.targetDeviceOffset.set(
 			relativeGamma * this.parameters.deviceStrengthX,
 			relativeBeta * -this.parameters.deviceStrengthY,
+		)
+	}
+
+	handleDeviceMotion(event) {
+		if (!this.parameters.deviceParallaxEnabled) return
+		if (performance.now() - this.lastDeviceOrientationTime < 450) return
+
+		const gravity = event.accelerationIncludingGravity
+		if (!gravity) return
+
+		const x = gravity.x
+		const y = gravity.y
+
+		if (typeof x !== 'number' || typeof y !== 'number') return
+		this.updateDeviceParallaxState({
+			lastMotionEvent: performance.now(),
+			motionX: x,
+			motionY: y,
+		})
+
+		if (!this.deviceMotionBase) {
+			this.deviceMotionBase = { x, y }
+		}
+
+		const relativeX = THREE.MathUtils.clamp(x - this.deviceMotionBase.x, -4.5, 4.5) / 4.5
+		const relativeY = THREE.MathUtils.clamp(y - this.deviceMotionBase.y, -4.5, 4.5) / 4.5
+
+		this.targetDeviceOffset.set(
+			relativeX * this.parameters.deviceStrengthX * 0.55,
+			relativeY * this.parameters.deviceStrengthY * 0.45,
 		)
 	}
 
@@ -2263,8 +2351,10 @@ diffuseColor.a *= prayDissolveOpacity;
 		window.removeEventListener('hashchange', this.handleDebugModeChange)
 		document.removeEventListener('mouseleave', this.handlePointerLeave)
 		this.wrapper?.removeEventListener('pointerdown', this.requestDeviceOrientationPermission)
+		this.wrapper?.removeEventListener('touchstart', this.requestDeviceOrientationPermission)
 		this.wrapper?.removeEventListener('touchend', this.requestDeviceOrientationPermission)
 		document.removeEventListener('pointerdown', this.requestDeviceOrientationPermission)
+		document.removeEventListener('touchstart', this.requestDeviceOrientationPermission)
 		document.removeEventListener('touchend', this.requestDeviceOrientationPermission)
 		document.removeEventListener('click', this.requestDeviceOrientationPermission)
 		this.removeDeviceOrientationListener()
