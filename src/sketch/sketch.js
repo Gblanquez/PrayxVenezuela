@@ -27,7 +27,7 @@ class PrayScene {
 		this.videoMaterial = null
 		this.videoGroupDissolveProgress = 0
 		this.videoTextureRevealProgress = 0
-		this.videoTextureRevealDuration = 1.8
+		this.videoTextureRevealDuration = 2.6
 		this.videoFrameSize = new THREE.Vector2(16, 9)
 		this.videoMeshBoundsMin = new THREE.Vector2(-1, -1)
 		this.videoMeshBoundsSize = new THREE.Vector2(2, 2)
@@ -1513,6 +1513,7 @@ class PrayScene {
 				uGrayscale: { value: this.parameters.videoGrayscale },
 				uRotation: { value: this.parameters.videoRotation },
 				uDissolveProgress: { value: 0 },
+				uDissolveDirection: { value: 0 },
 				uTextureRevealProgress: { value: 0 },
 				uDissolveScale: { value: 2.35 },
 				uDissolveEdge: { value: 0.075 },
@@ -1541,6 +1542,7 @@ class PrayScene {
 				uniform float uGrayscale;
 				uniform float uRotation;
 				uniform float uDissolveProgress;
+				uniform float uDissolveDirection;
 				uniform float uTextureRevealProgress;
 				uniform float uDissolveScale;
 				uniform float uDissolveEdge;
@@ -1612,12 +1614,19 @@ class PrayScene {
 					float grayscale = dot(videoColor.rgb, vec3(0.299, 0.587, 0.114));
 					videoColor.rgb = mix(videoColor.rgb, vec3(grayscale), uGrayscale);
 					videoColor.rgb *= uBrightness;
-					float dissolve = dissolveNoise(vWorldPosition * uDissolveScale + vec3(0.0, uDissolveProgress * 0.65, 0.0));
+					float dissolveNoiseValue = dissolveNoise(vWorldPosition * uDissolveScale + vec3(0.0, uDissolveProgress * 0.65, 0.0));
+					float bottomUp = 1.0 - clamp((vWorldPosition.y + 4.0) / 8.0, 0.0, 1.0);
+					float dissolve = mix(dissolveNoiseValue, bottomUp + (dissolveNoiseValue - 0.5) * 0.24, uDissolveDirection);
 					float revealCutoff = 1.0 - uTextureRevealProgress;
 					float revealAlpha = smoothstep(revealCutoff - uDissolveEdge, revealCutoff + uDissolveEdge, dissolve);
 					float revealRim = 1.0 - smoothstep(0.0, uDissolveEdge * 1.45, abs(dissolve - revealCutoff));
 					float dissolveAlpha = smoothstep(uDissolveProgress - uDissolveEdge, uDissolveProgress + uDissolveEdge, dissolve);
-					float dissolveOpacity = 1.0 - smoothstep(0.16, 0.96, uDissolveProgress);
+					dissolveAlpha = mix(dissolveAlpha, smoothstep(0.18, 0.82, dissolveAlpha), uDissolveDirection);
+					float dissolveOpacity = mix(
+						1.0 - smoothstep(0.16, 0.96, uDissolveProgress),
+						1.0,
+						uDissolveDirection
+					);
 					float dissolveRim = 1.0 - smoothstep(0.0, uDissolveEdge, abs(dissolve - uDissolveProgress));
 					videoColor.rgb = mix(videoColor.rgb, uDissolveEdgeColor, revealRim * (1.0 - uTextureRevealProgress) * 0.5);
 					videoColor.rgb = mix(videoColor.rgb, uDissolveEdgeColor, dissolveRim * uDissolveProgress * 0.65);
@@ -1625,6 +1634,8 @@ class PrayScene {
 					videoColor.a *= revealAlpha;
 					videoColor.a *= dissolveAlpha;
 					videoColor.a *= dissolveOpacity;
+
+					if (uDissolveDirection > 0.5 && videoColor.a < 0.025) discard;
 
 					gl_FragColor = videoColor;
 					#include <colorspace_fragment>
@@ -1710,6 +1721,7 @@ class PrayScene {
 		const clampedAlpha = THREE.MathUtils.clamp(alpha, 0, 1)
 
 		const dissolveProgress = 1 - clampedAlpha
+		const dissolveDirection = dissolveProgress < this.videoGroupDissolveProgress ? 1 : 0
 		const dissolveEase = dissolveProgress < this.videoGroupDissolveProgress ? 0.095 : 0.035
 		this.videoGroupDissolveProgress += (dissolveProgress - this.videoGroupDissolveProgress) * dissolveEase
 		this.videoGroup.visible = true
@@ -1725,7 +1737,8 @@ class PrayScene {
 				if (material === this.videoMaterial) {
 					material.uniforms.uOpacity.value = this.parameters.videoOpacity
 					material.uniforms.uDissolveProgress.value = this.videoGroupDissolveProgress
-					material.depthWrite = this.videoGroupDissolveProgress < 0.02
+					material.uniforms.uDissolveDirection.value = dissolveDirection
+					material.depthWrite = dissolveDirection > 0.5 || this.videoGroupDissolveProgress < 0.02
 					return
 				}
 
@@ -1738,9 +1751,10 @@ class PrayScene {
 
 				material.opacity = material.userData.prayBaseOpacity
 				material.transparent = true
-				material.depthWrite = this.videoGroupDissolveProgress < 0.02
+				material.depthWrite = dissolveDirection > 0.5 || this.videoGroupDissolveProgress < 0.02
 				if (material.userData.dissolveUniforms) {
 					material.userData.dissolveUniforms.uDissolveProgress.value = this.videoGroupDissolveProgress
+					material.userData.dissolveUniforms.uDissolveDirection.value = dissolveDirection
 				}
 				material.needsUpdate = true
 			})
@@ -2070,6 +2084,7 @@ class PrayScene {
 
 		const dissolveUniforms = {
 			uDissolveProgress: { value: this.videoGroupDissolveProgress },
+			uDissolveDirection: { value: 0 },
 			uDissolveScale: { value: 2.35 },
 			uDissolveEdge: { value: 0.075 },
 			uDissolveEdgeColor: { value: new THREE.Color('#f8fbff') },
@@ -2104,6 +2119,7 @@ vPrayDissolveWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;
 					`
 varying vec3 vPrayDissolveWorldPosition;
 uniform float uDissolveProgress;
+uniform float uDissolveDirection;
 uniform float uDissolveScale;
 uniform float uDissolveEdge;
 uniform vec3 uDissolveEdgeColor;
@@ -2147,13 +2163,21 @@ void main() {
 					'#include <color_fragment>',
 					`
 #include <color_fragment>
-float prayDissolve = prayDissolveNoise(vPrayDissolveWorldPosition * uDissolveScale + vec3(0.0, uDissolveProgress * 0.65, 0.0));
+float prayDissolveNoiseValue = prayDissolveNoise(vPrayDissolveWorldPosition * uDissolveScale + vec3(0.0, uDissolveProgress * 0.65, 0.0));
+float prayBottomUp = 1.0 - clamp((vPrayDissolveWorldPosition.y + 4.0) / 8.0, 0.0, 1.0);
+float prayDissolve = mix(prayDissolveNoiseValue, prayBottomUp + (prayDissolveNoiseValue - 0.5) * 0.24, uDissolveDirection);
 float prayDissolveAlpha = smoothstep(uDissolveProgress - uDissolveEdge, uDissolveProgress + uDissolveEdge, prayDissolve);
-float prayDissolveOpacity = 1.0 - smoothstep(0.16, 0.96, uDissolveProgress);
+prayDissolveAlpha = mix(prayDissolveAlpha, smoothstep(0.18, 0.82, prayDissolveAlpha), uDissolveDirection);
+float prayDissolveOpacity = mix(
+	1.0 - smoothstep(0.16, 0.96, uDissolveProgress),
+	1.0,
+	uDissolveDirection
+);
 float prayDissolveRim = 1.0 - smoothstep(0.0, uDissolveEdge, abs(prayDissolve - uDissolveProgress));
 diffuseColor.rgb = mix(diffuseColor.rgb, uDissolveEdgeColor, prayDissolveRim * uDissolveProgress * 0.65);
 diffuseColor.a *= prayDissolveAlpha;
 diffuseColor.a *= prayDissolveOpacity;
+if (uDissolveDirection > 0.5 && diffuseColor.a < 0.025) discard;
 					`,
 				)
 		}
