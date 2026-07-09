@@ -131,7 +131,8 @@ class AboutTimeline {
 			titleDelay: 0,
 			labelsDelay: 0.24,
 			includeBodyText: false,
-			includeDecorativeText: false,
+			includeAboutText: true,
+			includeCtaText: false,
 		})
 		this.queueSequenceCall(0.32, () => {
 			this.visualsEnabled = true
@@ -186,7 +187,8 @@ class AboutTimeline {
 			titleDelay: 0,
 			labelsDelay: 0.18,
 			includeBodyText: false,
-			includeDecorativeText: false,
+			includeAboutText: true,
+			includeCtaText: false,
 			includeControls: false,
 		})
 		this.hideCloseTriggers()

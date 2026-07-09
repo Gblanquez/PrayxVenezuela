@@ -11,7 +11,8 @@ class HeroText {
 		this.heroTitleSplit = null
 		this.heroLabelSplit = null
 		this.bodyTextSplit = null
-		this.decorativeTextSplit = null
+		this.aboutTextSplit = null
+		this.ctaTextSplit = null
 		this.entryTimeline = null
 		this.entryStartTimer = null
 		this.entryStartFrames = []
@@ -127,16 +128,35 @@ class HeroText {
 			}
 		}
 
-		if (!this.decorativeTextSplit) {
-			const decorativeText = Array.from(document.querySelectorAll('[about="text"], [data-a="cta-txt"]'))
+		if (!this.aboutTextSplit) {
+			const aboutText = Array.from(document.querySelectorAll('[about="text"]'))
 
-			if (decorativeText.length) {
-				this.decorativeTextSplit = SplitText.create(decorativeText, {
+			if (aboutText.length) {
+				this.aboutTextSplit = SplitText.create(aboutText, {
 					type: 'chars',
-					charsClass: 'decorative-text-char',
+					charsClass: 'about-text-char',
 				})
 
-				gsap.set(this.decorativeTextSplit.chars, {
+				gsap.set(this.aboutTextSplit.chars, {
+					display: 'inline-block',
+					x: '0%',
+					opacity: 1,
+					willChange: 'transform, opacity',
+					force3D: true,
+				})
+			}
+		}
+
+		if (!this.ctaTextSplit) {
+			const ctaText = Array.from(document.querySelectorAll('[data-a="cta-txt"]'))
+
+			if (ctaText.length) {
+				this.ctaTextSplit = SplitText.create(ctaText, {
+					type: 'chars',
+					charsClass: 'cta-text-char',
+				})
+
+				gsap.set(this.ctaTextSplit.chars, {
 					display: 'inline-block',
 					x: '0%',
 					opacity: 1,
@@ -171,7 +191,12 @@ class HeroText {
 			opacity: 0,
 		})
 
-		gsap.set(this.getDecorativeTextChars(), {
+		gsap.set(this.getAboutTextChars(), {
+			x: (index) => (index % 2 === 0 ? '-42%' : '42%'),
+			opacity: 0,
+		})
+
+		gsap.set(this.getCtaTextChars(), {
 			x: (index) => (index % 2 === 0 ? '-42%' : '42%'),
 			opacity: 0,
 		})
@@ -236,7 +261,8 @@ class HeroText {
 		decorativeDelay = 0.22,
 		controlsDelay = 0.32,
 		includeBodyText = true,
-		includeDecorativeText = true,
+		includeAboutText = true,
+		includeCtaText = true,
 		includeControls = true,
 	} = {}) {
 		this.ensureSplits()
@@ -247,7 +273,8 @@ class HeroText {
 		const titleChars = this.getTitleChars()
 		const bodyLines = this.getBodyLines()
 		const bodyTextChars = this.getBodyTextChars()
-		const decorativeTextChars = this.getDecorativeTextChars()
+		const aboutTextChars = this.getAboutTextChars()
+		const ctaTextChars = this.getCtaTextChars()
 
 		if (titleChars.length) {
 			this.entryTimeline.fromTo(titleChars, {
@@ -305,8 +332,21 @@ class HeroText {
 			}, bodyTextDelay)
 		}
 
-		if (includeDecorativeText && decorativeTextChars.length) {
-			this.entryTimeline.fromTo(decorativeTextChars, {
+		if (includeAboutText && aboutTextChars.length) {
+			this.entryTimeline.fromTo(aboutTextChars, {
+				x: (index) => (index % 2 === 0 ? '-42%' : '42%'),
+				opacity: 0,
+			}, {
+				x: '0%',
+				opacity: 1,
+				duration: 1.15,
+				ease: 'power3.out',
+				stagger: 0.004,
+			}, decorativeDelay)
+		}
+
+		if (includeCtaText && ctaTextChars.length) {
+			this.entryTimeline.fromTo(ctaTextChars, {
 				x: (index) => (index % 2 === 0 ? '-42%' : '42%'),
 				opacity: 0,
 			}, {
@@ -337,7 +377,8 @@ class HeroText {
 		bodyTextDelay = 0.08,
 		decorativeDelay = 0.08,
 		includeBodyText = true,
-		includeDecorativeText = true,
+		includeAboutText = true,
+		includeCtaText = true,
 	} = {}) {
 		this.cancelScheduledEntryAnimation()
 		this.entryTimeline?.kill()
@@ -387,8 +428,20 @@ class HeroText {
 			})
 		}
 
-		if (includeDecorativeText) {
-			gsap.to(this.getDecorativeTextChars(), {
+		if (includeAboutText) {
+			gsap.to(this.getAboutTextChars(), {
+				x: (index) => (index % 2 === 0 ? '-42%' : '42%'),
+				opacity: 0,
+				duration: 0.85,
+				ease: 'power3.inOut',
+				stagger: 0.004,
+				delay: decorativeDelay,
+				overwrite: true,
+			})
+		}
+
+		if (includeCtaText) {
+			gsap.to(this.getCtaTextChars(), {
 				x: (index) => (index % 2 === 0 ? '-42%' : '42%'),
 				opacity: 0,
 				duration: 0.85,
@@ -407,7 +460,8 @@ class HeroText {
 		this.heroTitleSplit?.revert()
 		this.heroLabelSplit?.revert()
 		this.bodyTextSplit?.revert()
-		this.decorativeTextSplit?.revert()
+		this.aboutTextSplit?.revert()
+		this.ctaTextSplit?.revert()
 	}
 
 	getBodyLines() {
@@ -422,8 +476,12 @@ class HeroText {
 		return this.bodyTextSplit?.chars || []
 	}
 
-	getDecorativeTextChars() {
-		return this.decorativeTextSplit?.chars || []
+	getAboutTextChars() {
+		return this.aboutTextSplit?.chars || []
+	}
+
+	getCtaTextChars() {
+		return this.ctaTextSplit?.chars || []
 	}
 
 	getLabelGroups() {
@@ -440,7 +498,8 @@ class HeroText {
 			bodyLines: this.getBodyLines().length,
 			labelChars: this.heroLabelSplit?.chars?.length || 0,
 			bodyTextChars: this.getBodyTextChars().length,
-			decorativeTextChars: this.getDecorativeTextChars().length,
+			aboutTextChars: this.getAboutTextChars().length,
+			ctaTextChars: this.getCtaTextChars().length,
 			attempts: this.mountAttempts,
 		}
 	}
