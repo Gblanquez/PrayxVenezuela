@@ -33,10 +33,14 @@ class AboutTimeline {
 		this.touchY = 0
 		this.selectedItem = null
 		this.heroSplit = null
+		this.heroTitleSplit = null
+		this.heroLabelSplit = null
 		this.openContentSplit = null
 		this.openContentTimeline = null
 		this.isEnabled = false
+		this.visualsEnabled = false
 		this.closeHideTween = null
+		this.sequenceCalls = []
 		this.triggers = []
 		this.closeTriggers = []
 		this.closeIconStates = new Map()
@@ -104,11 +108,20 @@ class AboutTimeline {
 		if (this.isEnabled) return
 
 		this.isEnabled = true
+		this.visualsEnabled = false
+		this.clearSequenceCalls()
 		this.updateAboutTriggerState()
-		this.startIntroAnimation()
-		this.showCloseTriggers()
-		this.animateHeroTextOut()
-		this.animateAboutTextOut()
+		this.animateHeroTextOut({
+			bodyDelay: 0,
+			titleDelay: 0,
+			labelsDelay: 0.24,
+		})
+		this.queueSequenceCall(0.24, () => this.animateAboutTextOut())
+		this.queueSequenceCall(0.32, () => {
+			this.visualsEnabled = true
+			this.startIntroAnimation()
+			this.showCloseTriggers()
+		})
 		this.clearSelection({ animateContent: false, deferPlane: false })
 		const sectionTop = this.section.getBoundingClientRect().top + window.scrollY
 
@@ -126,13 +139,33 @@ class AboutTimeline {
 			return
 		}
 
+		this.clearSequenceCalls()
 		this.isEnabled = false
+		this.visualsEnabled = false
 		this.updateAboutTriggerState()
 		this.stopIntroAnimation()
 		this.clearSelection()
-		this.animateHeroTextIn()
+		this.animateHeroTextIn({
+			bodyDelay: 0,
+			titleDelay: 0,
+			labelsDelay: 0.18,
+		})
 		this.animateAboutTextIn()
 		this.hideCloseTriggers()
+	}
+
+	queueSequenceCall(delay, callback) {
+		const call = gsap.delayedCall(delay, () => {
+			this.sequenceCalls = this.sequenceCalls.filter((item) => item !== call)
+			callback()
+		})
+		this.sequenceCalls.push(call)
+		return call
+	}
+
+	clearSequenceCalls() {
+		this.sequenceCalls.forEach((call) => call.kill())
+		this.sequenceCalls = []
 	}
 
 	startIntroAnimation() {
@@ -275,27 +308,142 @@ class AboutTimeline {
 		this.closeHideTween = timeline
 	}
 
-	animateHeroTextOut() {
+	animateHeroTextOut({
+		bodyDelay = 0,
+		titleDelay = 0,
+		labelsDelay = 0,
+	} = {}) {
 		this.ensureHeroSplit()
 
-		if (!this.heroSplit?.lines?.length) return
+		if (this.heroSplit?.lines?.length) {
+			gsap.to(this.heroSplit.lines, {
+				y: '-110%',
+				duration: 1.05,
+				ease: 'power3.inOut',
+				stagger: 0.045,
+				delay: bodyDelay,
+				overwrite: true,
+			})
+		}
 
-		gsap.to(this.heroSplit.lines, {
-			y: '-110%',
-			duration: 1.05,
+		this.animateHeroTitleOut(titleDelay)
+		this.animateHeroLabelsOut(labelsDelay)
+	}
+
+	animateHeroTextIn({
+		bodyDelay = 0,
+		titleDelay = 0,
+		labelsDelay = 0,
+	} = {}) {
+		this.ensureHeroSplit()
+
+		if (!this.heroSplit?.lines?.length) {
+			this.animateHeroTitleIn(titleDelay)
+			this.animateHeroLabelsIn(labelsDelay)
+			return
+		}
+
+		const bodyLines = this.getHeroBodyLines()
+		const otherLines = this.heroSplit.lines.filter((line) => !bodyLines.includes(line))
+
+		if (otherLines.length) {
+			gsap.to(otherLines, {
+				y: '0%',
+				duration: 0.95,
+				ease: 'power3.inOut',
+				stagger: 0.035,
+				overwrite: true,
+			})
+		}
+
+		if (bodyLines.length) {
+			gsap.fromTo(bodyLines, {
+				y: '110%',
+			}, {
+				y: '0%',
+				duration: 1.2,
+				ease: 'power3.out',
+				stagger: 0.035,
+				delay: bodyDelay,
+				overwrite: true,
+			})
+		}
+
+		this.animateHeroTitleIn(titleDelay)
+		this.animateHeroLabelsIn(labelsDelay)
+	}
+
+	animateHeroTitleOut(delay = 0) {
+		const chars = this.getHeroTitleChars()
+		if (!chars.length) return
+
+		gsap.to(chars, {
+			x: (index) => ((index + 1) % 3 === 0 ? '0%' : '-40%'),
+			y: (index) => ((index + 1) % 3 === 0 ? '40%' : '0%'),
+			opacity: 0,
+			marginRight: '0.08em',
+			duration: 0.95,
 			ease: 'power3.inOut',
-			stagger: 0.045,
+			stagger: 0.018,
+			delay,
+			overwrite: true,
 		})
 	}
 
-	animateHeroTextIn() {
-		if (!this.heroSplit?.lines?.length) return
+	animateHeroTitleIn(delay = 0) {
+		const chars = this.getHeroTitleChars()
+		if (!chars.length) return
 
-		gsap.to(this.heroSplit.lines, {
+		gsap.fromTo(chars, {
+			x: (index) => ((index + 1) % 3 === 0 ? '0%' : '-40%'),
+			y: (index) => ((index + 1) % 3 === 0 ? '40%' : '0%'),
+			opacity: 0,
+			marginRight: '0.08em',
+		}, {
+			x: '0%',
 			y: '0%',
-			duration: 0.95,
-			ease: 'power3.inOut',
-			stagger: 0.035,
+			opacity: 1,
+			marginRight: '0.025em',
+			duration: 1.2,
+			ease: 'power3.out',
+			stagger: 0.018,
+			delay,
+			overwrite: true,
+		})
+	}
+
+	animateHeroLabelsOut(delay = 0) {
+		this.getHeroLabelGroups().forEach((chars, index) => {
+			if (!chars.length) return
+
+			gsap.to(chars, {
+				x: index < 2 ? '-100%' : '100%',
+				opacity: 0,
+				duration: 0.85,
+				ease: 'power3.inOut',
+				stagger: 0.012,
+				delay,
+				overwrite: true,
+			})
+		})
+	}
+
+	animateHeroLabelsIn(delay = 0) {
+		this.getHeroLabelGroups().forEach((chars, index) => {
+			if (!chars.length) return
+
+			gsap.fromTo(chars, {
+				x: index < 2 ? '-100%' : '100%',
+				opacity: 0,
+			}, {
+				x: '0%',
+				opacity: 1,
+				duration: 1.2,
+				ease: 'power3.out',
+				stagger: 0.012,
+				delay,
+				overwrite: true,
+			})
 		})
 	}
 
@@ -339,24 +487,75 @@ class AboutTimeline {
 	}
 
 	ensureHeroSplit() {
-		if (this.heroSplit) return
+		if (!this.heroSplit) {
+			const elements = Array.from(document.querySelectorAll('[data-a="hero-body"]'))
 
-		const elements = Array.from(document.querySelectorAll(
-			'[data-a="hero-title"], [data-a="hero-label"], [data-a="hero-body"]',
-		))
+			if (elements.length) {
+				this.heroSplit = SplitText.create(elements, {
+					type: 'lines',
+					mask: 'lines',
+					linesClass: 'hero-split-line',
+				})
 
-		if (!elements.length) return
+				gsap.set(this.heroSplit.lines, {
+					display: 'block',
+					willChange: 'transform',
+				})
+			}
+		}
 
-		this.heroSplit = SplitText.create(elements, {
-			type: 'lines',
-			mask: 'lines',
-			linesClass: 'hero-split-line',
-		})
+		if (!this.heroTitleSplit) {
+			const titles = Array.from(document.querySelectorAll('[data-a="hero-title"]'))
 
-		gsap.set(this.heroSplit.lines, {
-			display: 'block',
-			willChange: 'transform',
-		})
+			if (titles.length) {
+				this.heroTitleSplit = SplitText.create(titles, {
+					type: 'chars',
+					charsClass: 'hero-title-char',
+				})
+
+				gsap.set(this.heroTitleSplit.chars, {
+					display: 'inline-block',
+					marginRight: '0.025em',
+					willChange: 'transform, opacity',
+				})
+			}
+		}
+
+		if (!this.heroLabelSplit) {
+			const labels = Array.from(document.querySelectorAll('[data-a="hero-label"]'))
+
+			if (!labels.length) return
+
+			this.heroLabelSplit = SplitText.create(labels, {
+				type: 'chars',
+				charsClass: 'hero-label-char',
+			})
+
+			gsap.set(this.heroLabelSplit.chars, {
+				display: 'inline-block',
+				willChange: 'transform, opacity',
+			})
+		}
+	}
+
+	getHeroBodyLines() {
+		const bodyElements = Array.from(document.querySelectorAll('[data-a="hero-body"]'))
+		if (!bodyElements.length) return []
+
+		return this.heroSplit.lines.filter((line) =>
+			bodyElements.some((element) => element.contains(line)),
+		)
+	}
+
+	getHeroTitleChars() {
+		return this.heroTitleSplit?.chars || []
+	}
+
+	getHeroLabelGroups() {
+		if (!this.heroLabelSplit?.chars?.length) return []
+
+		return Array.from(document.querySelectorAll('[data-a="hero-label"]'))
+			.map((label) => this.heroLabelSplit.chars.filter((char) => label.contains(char)))
 	}
 
 	ensureCloseCanvas(trigger) {
@@ -705,7 +904,7 @@ class AboutTimeline {
 		const sectionLength = rect.height + viewportHeight
 		const rawProgress = (viewportHeight - rect.top) / sectionLength
 		const isVisible = rect.top < viewportHeight && rect.bottom > 0
-		const targetAmount = this.isEnabled && isVisible ? 1 : 0
+		const targetAmount = this.visualsEnabled && isVisible ? 1 : 0
 
 		this.activeAmount += (targetAmount - this.activeAmount) * 0.08
 		this.scrollProgress = rawProgress
@@ -756,11 +955,12 @@ class AboutTimeline {
 			)
 			const introProgress = this.easeValue(item.introProgress)
 			const introRemaining = 1 - introProgress
-			const introPosition = new THREE.Vector3(
+			const stackedPosition = new THREE.Vector3(
 				0.18,
 				0.02,
 				-16 - item.index * 0.12,
-			).lerp(restingPosition, introProgress)
+			)
+			const introPosition = stackedPosition.clone().lerp(restingPosition, introProgress)
 			const introRotationX = Math.PI * 0.25 * introRemaining
 			const introBendPulse = Math.sin(introProgress * Math.PI) * 0.34
 
@@ -784,7 +984,7 @@ class AboutTimeline {
 			item.material.uniforms.uExpandBottomRight.value = cornerBottomRight
 			item.material.uniforms.uExpandBottomLeft.value = cornerBottomLeft
 			item.material.uniforms.uExpandTopLeft.value = cornerTopLeft
-			item.datePlane.material.opacity = opacity
+			item.datePlane.material.opacity = opacity * introProgress
 		})
 
 		return this.activeAmount
@@ -1017,7 +1217,10 @@ class AboutTimeline {
 			trigger.removeEventListener('click', this.handleCloseClick)
 		})
 		this.closeHideTween?.kill()
+		this.clearSequenceCalls()
 		this.heroSplit?.revert()
+		this.heroTitleSplit?.revert()
+		this.heroLabelSplit?.revert()
 		this.openContentTimeline?.kill()
 		this.openContentSplit?.revert()
 		this.clearSelection({ animateContent: false, deferPlane: false })

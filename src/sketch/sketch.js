@@ -24,6 +24,7 @@ class PrayScene {
 		this.videoElement = null
 		this.videoTexture = null
 		this.videoMaterial = null
+		this.videoGroupDissolveProgress = 0
 		this.videoFrameSize = new THREE.Vector2(16, 9)
 		this.videoMeshBoundsMin = new THREE.Vector2(-1, -1)
 		this.videoMeshBoundsSize = new THREE.Vector2(2, 2)
@@ -65,6 +66,8 @@ class PrayScene {
 		this.cameraBasePosition = new THREE.Vector3(0, 0.2, 7)
 		this.cameraLookAt = new THREE.Vector3(0, 0, 0)
 		this.cameraFocusTarget = new THREE.Vector3()
+		this.cameraForward = new THREE.Vector3()
+		this.aboutCameraProgress = 0
 		this.targetPointerOffset = new THREE.Vector2()
 		this.targetDeviceOffset = new THREE.Vector2()
 		this.combinedCameraOffset = new THREE.Vector2()
@@ -1497,14 +1500,21 @@ class PrayScene {
 				uBrightness: { value: this.parameters.videoEmissiveIntensity },
 				uGrayscale: { value: this.parameters.videoGrayscale },
 				uRotation: { value: this.parameters.videoRotation },
+				uDissolveProgress: { value: 0 },
+				uDissolveScale: { value: 2.35 },
+				uDissolveEdge: { value: 0.075 },
+				uDissolveEdgeColor: { value: new THREE.Color('#f8fbff') },
 			},
 			vertexShader: `
 				varying vec2 vUv;
+				varying vec3 vWorldPosition;
 
 				void main()
 				{
 					vUv = position.xy;
-					gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+					vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+					vWorldPosition = worldPosition.xyz;
+					gl_Position = projectionMatrix * viewMatrix * worldPosition;
 				}
 			`,
 			fragmentShader: `
@@ -1517,8 +1527,45 @@ class PrayScene {
 				uniform float uBrightness;
 				uniform float uGrayscale;
 				uniform float uRotation;
+				uniform float uDissolveProgress;
+				uniform float uDissolveScale;
+				uniform float uDissolveEdge;
+				uniform vec3 uDissolveEdgeColor;
 
 				varying vec2 vUv;
+				varying vec3 vWorldPosition;
+
+				float dissolveHash(vec3 p)
+				{
+					p = fract(p * 0.3183099 + vec3(0.1, 0.2, 0.3));
+					p *= 17.0;
+					return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+				}
+
+				float dissolveNoise(vec3 p)
+				{
+					vec3 i = floor(p);
+					vec3 f = fract(p);
+					f = f * f * (3.0 - 2.0 * f);
+
+					float n000 = dissolveHash(i + vec3(0.0, 0.0, 0.0));
+					float n100 = dissolveHash(i + vec3(1.0, 0.0, 0.0));
+					float n010 = dissolveHash(i + vec3(0.0, 1.0, 0.0));
+					float n110 = dissolveHash(i + vec3(1.0, 1.0, 0.0));
+					float n001 = dissolveHash(i + vec3(0.0, 0.0, 1.0));
+					float n101 = dissolveHash(i + vec3(1.0, 0.0, 1.0));
+					float n011 = dissolveHash(i + vec3(0.0, 1.0, 1.0));
+					float n111 = dissolveHash(i + vec3(1.0, 1.0, 1.0));
+
+					float n00 = mix(n000, n100, f.x);
+					float n10 = mix(n010, n110, f.x);
+					float n01 = mix(n001, n101, f.x);
+					float n11 = mix(n011, n111, f.x);
+					float n0 = mix(n00, n10, f.y);
+					float n1 = mix(n01, n11, f.y);
+
+					return mix(n0, n1, f.z);
+				}
 
 				vec2 getUV(vec2 uv, vec2 textureSize, vec2 quadSize)
 				{
@@ -1551,7 +1598,14 @@ class PrayScene {
 					float grayscale = dot(videoColor.rgb, vec3(0.299, 0.587, 0.114));
 					videoColor.rgb = mix(videoColor.rgb, vec3(grayscale), uGrayscale);
 					videoColor.rgb *= uBrightness;
+					float dissolve = dissolveNoise(vWorldPosition * uDissolveScale + vec3(0.0, uDissolveProgress * 0.65, 0.0));
+					float dissolveAlpha = smoothstep(uDissolveProgress - uDissolveEdge, uDissolveProgress + uDissolveEdge, dissolve);
+					float dissolveOpacity = 1.0 - smoothstep(0.16, 0.96, uDissolveProgress);
+					float dissolveRim = 1.0 - smoothstep(0.0, uDissolveEdge, abs(dissolve - uDissolveProgress));
+					videoColor.rgb = mix(videoColor.rgb, uDissolveEdgeColor, dissolveRim * uDissolveProgress * 0.65);
 					videoColor.a *= uOpacity;
+					videoColor.a *= dissolveAlpha;
+					videoColor.a *= dissolveOpacity;
 
 					gl_FragColor = videoColor;
 					#include <colorspace_fragment>
@@ -1635,7 +1689,10 @@ class PrayScene {
 
 		const clampedAlpha = THREE.MathUtils.clamp(alpha, 0, 1)
 
-		this.videoGroup.visible = clampedAlpha > 0.01
+		const dissolveProgress = 1 - clampedAlpha
+		const dissolveEase = dissolveProgress < this.videoGroupDissolveProgress ? 0.095 : 0.035
+		this.videoGroupDissolveProgress += (dissolveProgress - this.videoGroupDissolveProgress) * dissolveEase
+		this.videoGroup.visible = true
 
 		this.videoGroup.traverse((child) => {
 			if (!child.isMesh) return
@@ -1646,8 +1703,9 @@ class PrayScene {
 				if (!material) return
 
 				if (material === this.videoMaterial) {
-					material.uniforms.uOpacity.value = this.parameters.videoOpacity * clampedAlpha
-					material.depthWrite = clampedAlpha > 0.98
+					material.uniforms.uOpacity.value = this.parameters.videoOpacity
+					material.uniforms.uDissolveProgress.value = this.videoGroupDissolveProgress
+					material.depthWrite = this.videoGroupDissolveProgress < 0.02
 					return
 				}
 
@@ -1658,9 +1716,12 @@ class PrayScene {
 					material.userData.prayBaseTransparent = material.transparent
 				}
 
-				material.opacity = material.userData.prayBaseOpacity * clampedAlpha
+				material.opacity = material.userData.prayBaseOpacity
 				material.transparent = true
-				material.depthWrite = clampedAlpha > 0.98
+				material.depthWrite = this.videoGroupDissolveProgress < 0.02
+				if (material.userData.dissolveUniforms) {
+					material.userData.dissolveUniforms.uDissolveProgress.value = this.videoGroupDissolveProgress
+				}
 				material.needsUpdate = true
 			})
 		})
@@ -1908,6 +1969,9 @@ class PrayScene {
 				metalness: 0.04,
 				side: THREE.DoubleSide,
 			})
+			if (mesh.name === 'video-holder') {
+				this.applyDissolveToMaterial(mesh.material)
+			}
 			return
 		}
 
@@ -1925,8 +1989,107 @@ class PrayScene {
 				}
 			}
 
+			if (mesh.name === 'video-holder') {
+				this.applyDissolveToMaterial(material)
+			}
+
 			material.needsUpdate = true
 		})
+	}
+
+	applyDissolveToMaterial(material) {
+		if (!material || material.userData.hasPrayDissolve) return
+
+		const dissolveUniforms = {
+			uDissolveProgress: { value: this.videoGroupDissolveProgress },
+			uDissolveScale: { value: 2.35 },
+			uDissolveEdge: { value: 0.075 },
+			uDissolveEdgeColor: { value: new THREE.Color('#f8fbff') },
+		}
+
+		material.userData.hasPrayDissolve = true
+		material.userData.dissolveUniforms = dissolveUniforms
+		material.transparent = true
+		material.onBeforeCompile = (shader) => {
+			Object.assign(shader.uniforms, dissolveUniforms)
+
+			shader.vertexShader = shader.vertexShader
+				.replace(
+					'void main() {',
+					`
+varying vec3 vPrayDissolveWorldPosition;
+
+void main() {
+					`,
+				)
+				.replace(
+					'#include <begin_vertex>',
+					`
+#include <begin_vertex>
+vPrayDissolveWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;
+					`,
+				)
+
+			shader.fragmentShader = shader.fragmentShader
+				.replace(
+					'void main() {',
+					`
+varying vec3 vPrayDissolveWorldPosition;
+uniform float uDissolveProgress;
+uniform float uDissolveScale;
+uniform float uDissolveEdge;
+uniform vec3 uDissolveEdgeColor;
+
+float prayDissolveHash(vec3 p)
+{
+	p = fract(p * 0.3183099 + vec3(0.1, 0.2, 0.3));
+	p *= 17.0;
+	return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+}
+
+float prayDissolveNoise(vec3 p)
+{
+	vec3 i = floor(p);
+	vec3 f = fract(p);
+	f = f * f * (3.0 - 2.0 * f);
+
+	float n000 = prayDissolveHash(i + vec3(0.0, 0.0, 0.0));
+	float n100 = prayDissolveHash(i + vec3(1.0, 0.0, 0.0));
+	float n010 = prayDissolveHash(i + vec3(0.0, 1.0, 0.0));
+	float n110 = prayDissolveHash(i + vec3(1.0, 1.0, 0.0));
+	float n001 = prayDissolveHash(i + vec3(0.0, 0.0, 1.0));
+	float n101 = prayDissolveHash(i + vec3(1.0, 0.0, 1.0));
+	float n011 = prayDissolveHash(i + vec3(0.0, 1.0, 1.0));
+	float n111 = prayDissolveHash(i + vec3(1.0, 1.0, 1.0));
+
+	float n00 = mix(n000, n100, f.x);
+	float n10 = mix(n010, n110, f.x);
+	float n01 = mix(n001, n101, f.x);
+	float n11 = mix(n011, n111, f.x);
+	float n0 = mix(n00, n10, f.y);
+	float n1 = mix(n01, n11, f.y);
+
+	return mix(n0, n1, f.z);
+}
+
+void main() {
+					`,
+				)
+				.replace(
+					'#include <color_fragment>',
+					`
+#include <color_fragment>
+float prayDissolve = prayDissolveNoise(vPrayDissolveWorldPosition * uDissolveScale + vec3(0.0, uDissolveProgress * 0.65, 0.0));
+float prayDissolveAlpha = smoothstep(uDissolveProgress - uDissolveEdge, uDissolveProgress + uDissolveEdge, prayDissolve);
+float prayDissolveOpacity = 1.0 - smoothstep(0.16, 0.96, uDissolveProgress);
+float prayDissolveRim = 1.0 - smoothstep(0.0, uDissolveEdge, abs(prayDissolve - uDissolveProgress));
+diffuseColor.rgb = mix(diffuseColor.rgb, uDissolveEdgeColor, prayDissolveRim * uDissolveProgress * 0.65);
+diffuseColor.a *= prayDissolveAlpha;
+diffuseColor.a *= prayDissolveOpacity;
+					`,
+				)
+		}
+		material.needsUpdate = true
 	}
 
 	prepareFloorSea() {
@@ -2049,6 +2212,7 @@ class PrayScene {
 
 		this.updateRain(delta, elapsed)
 		const aboutAmount = this.aboutTimeline?.update() || 0
+		this.aboutCameraProgress += (aboutAmount - this.aboutCameraProgress) * 0.025
 		this.updateVideoGroupVisibility(1 - aboutAmount)
 
 		if (this.camera) {
@@ -2064,6 +2228,10 @@ class PrayScene {
 				this.cameraBasePosition.z + this.currentCameraOffset.y * 0.35,
 			)
 			this.camera.lookAt(this.cameraFocusTarget)
+			this.camera.getWorldDirection(this.cameraForward)
+			this.camera.position.addScaledVector(this.cameraForward, this.aboutCameraProgress * 1.05)
+			this.camera.fov = THREE.MathUtils.lerp(this.parameters.cameraFov, Math.max(20, this.parameters.cameraFov - 4), this.aboutCameraProgress)
+			this.camera.updateProjectionMatrix()
 			this.camera.rotateX(this.parameters.cameraAngleX)
 			this.camera.rotateY(this.parameters.cameraAngleY)
 			this.camera.rotateZ(this.parameters.cameraAngleZ)
