@@ -847,7 +847,7 @@ class AboutTimeline {
 		const context = canvas.getContext('2d')
 
 		context.clearRect(0, 0, width, height)
-		context.font = '500 22px Arial, sans-serif'
+		context.font = '500 30px Arial, sans-serif'
 		context.textAlign = 'center'
 		context.textBaseline = 'middle'
 		context.fillStyle = 'rgba(255, 255, 255, 0.92)'
@@ -862,7 +862,7 @@ class AboutTimeline {
 			depthWrite: false,
 			side: THREE.DoubleSide,
 		})
-		const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.36, 0.09), material)
+		const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.48, 0.12), material)
 		mesh.userData.dateTexture = texture
 		return mesh
 	}
