@@ -136,7 +136,7 @@ class PrayScene {
 			volumetricOpacity: 0.213,
 			volumetricX: 0.99,
 			volumetricY: 0.25,
-			volumetricZ: 5.78,
+			volumetricZ: 1.36,
 			volumetricRotationX: -0.021592653589793,
 			volumetricRotationY: 0.208407346410207,
 			volumetricRotationZ: -1.41159265358979,
