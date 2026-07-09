@@ -2125,15 +2125,18 @@ diffuseColor.a *= prayDissolveOpacity;
 
 	handlePointerMove(event) {
 		if (!this.parameters.pointerParallaxEnabled) return
+		if (event.pointerType === 'touch' || window.matchMedia?.('(pointer: coarse)').matches) {
+			this.targetPointerOffset.set(0, 0)
+			return
+		}
 
 		this.updatePointerOffset(event.clientX, event.clientY)
 	}
 
 	handleTouchMove(event) {
-		if (!this.parameters.pointerParallaxEnabled || !event.touches?.length) return
+		if (!this.parameters.pointerParallaxEnabled) return
 
-		const touch = event.touches[0]
-		this.updatePointerOffset(touch.clientX, touch.clientY)
+		this.targetPointerOffset.set(0, 0)
 	}
 
 	updatePointerOffset(clientX, clientY) {
