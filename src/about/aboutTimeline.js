@@ -69,6 +69,7 @@ class AboutTimeline {
 
 		this.injectCloseStyles()
 		this.hideOpenContent()
+		this.ensureHeroSplit()
 		this.createItems()
 		this.setupTriggers()
 		window.addEventListener('pointerdown', this.handlePointerDown, { passive: true })
@@ -499,7 +500,10 @@ class AboutTimeline {
 
 				gsap.set(this.heroSplit.lines, {
 					display: 'block',
+					y: '0%',
+					opacity: 1,
 					willChange: 'transform',
+					force3D: true,
 				})
 			}
 		}
@@ -515,8 +519,12 @@ class AboutTimeline {
 
 				gsap.set(this.heroTitleSplit.chars, {
 					display: 'inline-block',
+					x: '0%',
+					y: '0%',
+					opacity: 1,
 					marginRight: '0.025em',
 					willChange: 'transform, opacity',
+					force3D: true,
 				})
 			}
 		}
@@ -533,7 +541,10 @@ class AboutTimeline {
 
 			gsap.set(this.heroLabelSplit.chars, {
 				display: 'inline-block',
+				x: '0%',
+				opacity: 1,
 				willChange: 'transform, opacity',
+				force3D: true,
 			})
 		}
 	}
