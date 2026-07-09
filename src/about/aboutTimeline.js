@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { gsap } from 'gsap'
 import { SplitText } from 'gsap/SplitText'
+import heroText from '../text/heroText'
 
 gsap.registerPlugin(SplitText)
 
@@ -16,6 +17,7 @@ class AboutTimeline {
 		this.wrapper = null
 		this.scene = null
 		this.camera = null
+		this.assetCoordinator = null
 		this.group = null
 		this.contentOpenWrapper = null
 		this.items = []
@@ -35,6 +37,10 @@ class AboutTimeline {
 		this.heroSplit = null
 		this.heroTitleSplit = null
 		this.heroLabelSplit = null
+		this.bodyTextSplit = null
+		this.entryTimeline = null
+		this.entryStartTimer = null
+		this.entryStartFrames = []
 		this.openContentSplit = null
 		this.openContentTimeline = null
 		this.isEnabled = false
@@ -47,12 +53,14 @@ class AboutTimeline {
 		this.handlePointerDown = this.handlePointerDown.bind(this)
 		this.handleTriggerClick = this.handleTriggerClick.bind(this)
 		this.handleCloseClick = this.handleCloseClick.bind(this)
+		this.handleTriggerProximity = this.handleTriggerProximity.bind(this)
+		this.handleTriggerPreload = this.handleTriggerPreload.bind(this)
 		this.handleWheel = this.handleWheel.bind(this)
 		this.handleTouchStart = this.handleTouchStart.bind(this)
 		this.handleTouchMove = this.handleTouchMove.bind(this)
 	}
 
-	mount({ scene, camera, wrapper }) {
+	mount({ scene, camera, wrapper, assetCoordinator = null }) {
 		this.section = document.querySelector('.about-section')
 
 		if (!this.section || !scene || !camera || !wrapper) return
@@ -60,6 +68,7 @@ class AboutTimeline {
 		this.scene = scene
 		this.camera = camera
 		this.wrapper = wrapper
+		this.assetCoordinator = assetCoordinator
 		this.contentOpenWrapper = document.querySelector('.content-open-wrapper')
 		this.group = new THREE.Group()
 		this.group.name = 'about-timeline'
@@ -69,10 +78,12 @@ class AboutTimeline {
 
 		this.injectCloseStyles()
 		this.hideOpenContent()
-		this.ensureHeroSplit()
 		this.createItems()
 		this.setupTriggers()
+		this.assetCoordinator?.setAboutPreloadCallback(() => this.preloadVideoTextures())
+		this.assetCoordinator?.scheduleAboutPreload(3000)
 		window.addEventListener('pointerdown', this.handlePointerDown, { passive: true })
+		window.addEventListener('pointermove', this.handleTriggerProximity, { passive: true })
 		window.addEventListener('wheel', this.handleWheel, { passive: false })
 		window.addEventListener('touchstart', this.handleTouchStart, { passive: true })
 		window.addEventListener('touchmove', this.handleTouchMove, { passive: false })
@@ -82,6 +93,8 @@ class AboutTimeline {
 		this.triggers = Array.from(document.querySelectorAll('.about-trigger'))
 		this.triggers.forEach((trigger) => {
 			trigger.addEventListener('click', this.handleTriggerClick)
+			trigger.addEventListener('pointerenter', this.handleTriggerPreload)
+			trigger.addEventListener('focus', this.handleTriggerPreload)
 		})
 
 		this.closeTriggers = Array.from(document.querySelectorAll(closeTriggerSelector))
@@ -108,16 +121,18 @@ class AboutTimeline {
 
 		if (this.isEnabled) return
 
+		this.assetCoordinator?.preloadAboutVideos('click')
 		this.isEnabled = true
 		this.visualsEnabled = false
 		this.clearSequenceCalls()
 		this.updateAboutTriggerState()
-		this.animateHeroTextOut({
+		heroText.animateOut({
 			bodyDelay: 0,
 			titleDelay: 0,
 			labelsDelay: 0.24,
+			includeBodyText: false,
+			includeDecorativeText: false,
 		})
-		this.queueSequenceCall(0.24, () => this.animateAboutTextOut())
 		this.queueSequenceCall(0.32, () => {
 			this.visualsEnabled = true
 			this.startIntroAnimation()
@@ -130,6 +145,26 @@ class AboutTimeline {
 			top: sectionTop,
 			behavior: 'smooth',
 		})
+	}
+
+	handleTriggerPreload() {
+		this.assetCoordinator?.preloadAboutVideos('trigger')
+	}
+
+	handleTriggerProximity(event) {
+		if (!this.triggers.length || this.assetCoordinator?.aboutPreloadStarted) return
+
+		const threshold = Math.min(220, Math.max(window.innerWidth * 0.16, 96))
+		const isNear = this.triggers.some((trigger) => {
+			const rect = trigger.getBoundingClientRect()
+			const dx = Math.max(rect.left - event.clientX, 0, event.clientX - rect.right)
+			const dy = Math.max(rect.top - event.clientY, 0, event.clientY - rect.bottom)
+			return Math.hypot(dx, dy) <= threshold
+		})
+
+		if (isNear) {
+			this.assetCoordinator?.preloadAboutVideos('proximity')
+		}
 	}
 
 	handleCloseClick(event) {
@@ -146,12 +181,14 @@ class AboutTimeline {
 		this.updateAboutTriggerState()
 		this.stopIntroAnimation()
 		this.clearSelection()
-		this.animateHeroTextIn({
+		heroText.animateIn({
 			bodyDelay: 0,
 			titleDelay: 0,
 			labelsDelay: 0.18,
+			includeBodyText: false,
+			includeDecorativeText: false,
+			includeControls: false,
 		})
-		this.animateAboutTextIn()
 		this.hideCloseTriggers()
 	}
 
@@ -448,6 +485,39 @@ class AboutTimeline {
 		})
 	}
 
+	animateBodyTextOut(delay = 0) {
+		const chars = this.getBodyTextChars()
+		if (!chars.length) return
+
+		gsap.to(chars, {
+			x: (index) => (index % 2 === 0 ? '-42%' : '42%'),
+			opacity: 0,
+			duration: 0.85,
+			ease: 'power3.inOut',
+			stagger: 0.004,
+			delay,
+			overwrite: true,
+		})
+	}
+
+	animateBodyTextIn(delay = 0) {
+		const chars = this.getBodyTextChars()
+		if (!chars.length) return
+
+		gsap.fromTo(chars, {
+			x: (index) => (index % 2 === 0 ? '-42%' : '42%'),
+			opacity: 0,
+		}, {
+			x: '0%',
+			opacity: 1,
+			duration: 1.15,
+			ease: 'power3.out',
+			stagger: 0.004,
+			delay,
+			overwrite: true,
+		})
+	}
+
 	animateAboutTextOut() {
 		const targets = Array.from(document.querySelectorAll('[about="text"]'))
 		if (!targets.length) return
@@ -532,20 +602,170 @@ class AboutTimeline {
 		if (!this.heroLabelSplit) {
 			const labels = Array.from(document.querySelectorAll('[data-a="hero-label"]'))
 
-			if (!labels.length) return
+			if (labels.length) {
+				this.heroLabelSplit = SplitText.create(labels, {
+					type: 'chars',
+					charsClass: 'hero-label-char',
+				})
 
-			this.heroLabelSplit = SplitText.create(labels, {
+				gsap.set(this.heroLabelSplit.chars, {
+					display: 'inline-block',
+					x: '0%',
+					opacity: 1,
+					willChange: 'transform, opacity',
+					force3D: true,
+				})
+			}
+		}
+
+		if (!this.bodyTextSplit) {
+			const bodyText = Array.from(document.querySelectorAll('[data-a="body-text"]'))
+
+			if (!bodyText.length) return
+
+			this.bodyTextSplit = SplitText.create(bodyText, {
 				type: 'chars',
-				charsClass: 'hero-label-char',
+				charsClass: 'body-text-char',
 			})
 
-			gsap.set(this.heroLabelSplit.chars, {
+			gsap.set(this.bodyTextSplit.chars, {
 				display: 'inline-block',
 				x: '0%',
 				opacity: 1,
 				willChange: 'transform, opacity',
 				force3D: true,
 			})
+		}
+	}
+
+	prepareEntryTextState() {
+		const titleChars = this.getHeroTitleChars()
+		const bodyLines = this.getHeroBodyLines()
+		const bodyTextChars = this.getBodyTextChars()
+
+		if (titleChars.length) {
+			gsap.set(titleChars, {
+				x: (index) => ((index + 1) % 3 === 0 ? '0%' : '-40%'),
+				y: (index) => ((index + 1) % 3 === 0 ? '40%' : '0%'),
+				opacity: 0,
+				marginRight: '0.08em',
+			})
+		}
+
+		if (bodyLines.length) {
+			gsap.set(bodyLines, {
+				y: '110%',
+			})
+		}
+
+		this.getHeroLabelGroups().forEach((chars, index) => {
+			gsap.set(chars, {
+				x: index < 2 ? '-100%' : '100%',
+				opacity: 0,
+			})
+		})
+
+		if (bodyTextChars.length) {
+			gsap.set(bodyTextChars, {
+				x: (index) => (index % 2 === 0 ? '-42%' : '42%'),
+				opacity: 0,
+			})
+		}
+	}
+
+	cancelScheduledEntryAnimation() {
+		if (this.entryStartTimer) {
+			window.clearTimeout(this.entryStartTimer)
+			this.entryStartTimer = null
+		}
+
+		this.entryStartFrames.forEach((frame) => window.cancelAnimationFrame(frame))
+		this.entryStartFrames = []
+	}
+
+	scheduleEntryTextAnimation() {
+		const start = () => {
+			const firstFrame = window.requestAnimationFrame(() => {
+				const secondFrame = window.requestAnimationFrame(() => {
+					this.entryStartFrames = []
+					this.playEntryTextAnimation()
+				})
+				this.entryStartFrames.push(secondFrame)
+			})
+			this.entryStartFrames.push(firstFrame)
+		}
+
+		if (document.fonts?.ready) {
+			const fontReady = document.fonts.ready.catch(() => {})
+			const maxWait = new Promise((resolve) => {
+				this.entryStartTimer = window.setTimeout(resolve, 320)
+			})
+
+			Promise.race([fontReady, maxWait]).then(() => {
+				if (this.entryStartTimer) {
+					window.clearTimeout(this.entryStartTimer)
+					this.entryStartTimer = null
+				}
+				start()
+			})
+			return
+		}
+
+		this.entryStartTimer = window.setTimeout(() => {
+			this.entryStartTimer = null
+			start()
+		}, 80)
+	}
+
+	playEntryTextAnimation() {
+		this.entryTimeline?.kill()
+		this.entryTimeline = gsap.timeline()
+
+		const titleChars = this.getHeroTitleChars()
+		const bodyLines = this.getHeroBodyLines()
+		const bodyTextChars = this.getBodyTextChars()
+
+		if (titleChars.length) {
+			this.entryTimeline.to(titleChars, {
+				x: '0%',
+				y: '0%',
+				opacity: 1,
+				marginRight: '0.025em',
+				duration: 1.2,
+				ease: 'power3.out',
+				stagger: 0.018,
+			}, 0)
+		}
+
+		if (bodyLines.length) {
+			this.entryTimeline.to(bodyLines, {
+				y: '0%',
+				duration: 1.2,
+				ease: 'power3.out',
+				stagger: 0.035,
+			}, 0.08)
+		}
+
+		this.getHeroLabelGroups().forEach((chars, index) => {
+			if (!chars.length) return
+
+			this.entryTimeline.to(chars, {
+				x: '0%',
+				opacity: 1,
+				duration: 1.2,
+				ease: 'power3.out',
+				stagger: 0.012,
+			}, index < 2 ? 0.08 : 0.14)
+		})
+
+		if (bodyTextChars.length) {
+			this.entryTimeline.to(bodyTextChars, {
+				x: '0%',
+				opacity: 1,
+				duration: 1.15,
+				ease: 'power3.out',
+				stagger: 0.004,
+			}, 0.18)
 		}
 	}
 
@@ -560,6 +780,10 @@ class AboutTimeline {
 
 	getHeroTitleChars() {
 		return this.heroTitleSplit?.chars || []
+	}
+
+	getBodyTextChars() {
+		return this.bodyTextSplit?.chars || []
 	}
 
 	getHeroLabelGroups() {
@@ -660,13 +884,7 @@ class AboutTimeline {
 
 			const dateElement = element.querySelector('[collection="date"], .collection-content')
 			const explanationElement = element.querySelector('.collection-explanation')
-			const video = this.createVideoElement(videoSource)
-			const texture = new THREE.VideoTexture(video)
-			texture.colorSpace = THREE.SRGBColorSpace
-			texture.minFilter = THREE.LinearFilter
-			texture.magFilter = THREE.LinearFilter
-			texture.generateMipmaps = false
-
+			const texture = this.createBlankTexture()
 			const material = this.createVideoMaterial(texture)
 			const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 0.59, 24, 14), material)
 			mesh.name = `about-video-${index}`
@@ -681,7 +899,8 @@ class AboutTimeline {
 			const item = {
 				element,
 				explanationElement,
-				video,
+				video: null,
+				videoSource,
 				texture,
 				material,
 				mesh,
@@ -689,14 +908,48 @@ class AboutTimeline {
 				index,
 				expandProgress: 0,
 				introProgress: 0,
+				isVideoPrepared: false,
 			}
 
-			video.addEventListener('loadedmetadata', () => {
-				material.uniforms.uTextureSize.value.set(video.videoWidth || 16, video.videoHeight || 9)
-			})
-			video.play().catch(() => {})
 			this.items.push(item)
 		})
+	}
+
+	createBlankTexture() {
+		const data = new Uint8Array([0, 0, 0, 255])
+		const texture = new THREE.DataTexture(data, 1, 1, THREE.RGBAFormat)
+		texture.colorSpace = THREE.SRGBColorSpace
+		texture.needsUpdate = true
+		return texture
+	}
+
+	preloadVideoTextures() {
+		this.items.forEach((item) => {
+			this.prepareItemVideo(item)
+		})
+	}
+
+	prepareItemVideo(item) {
+		if (!item || item.isVideoPrepared || !item.videoSource) return
+
+		const video = this.createVideoElement(item.videoSource)
+		const texture = new THREE.VideoTexture(video)
+		texture.colorSpace = THREE.SRGBColorSpace
+		texture.minFilter = THREE.LinearFilter
+		texture.magFilter = THREE.LinearFilter
+		texture.generateMipmaps = false
+
+		item.video = video
+		item.texture.dispose()
+		item.texture = texture
+		item.isVideoPrepared = true
+		item.material.uniforms.uTexture.value = texture
+
+		video.addEventListener('loadedmetadata', () => {
+			item.material.uniforms.uTextureSize.value.set(video.videoWidth || 16, video.videoHeight || 9)
+		})
+		video.load()
+		video.play().catch(() => {})
 	}
 
 	resolveVideoSource(element) {
@@ -1218,29 +1471,37 @@ class AboutTimeline {
 
 	dispose() {
 		window.removeEventListener('pointerdown', this.handlePointerDown)
+		window.removeEventListener('pointermove', this.handleTriggerProximity)
 		window.removeEventListener('wheel', this.handleWheel)
 		window.removeEventListener('touchstart', this.handleTouchStart)
 		window.removeEventListener('touchmove', this.handleTouchMove)
 		this.triggers?.forEach((trigger) => {
 			trigger.removeEventListener('click', this.handleTriggerClick)
+			trigger.removeEventListener('pointerenter', this.handleTriggerPreload)
+			trigger.removeEventListener('focus', this.handleTriggerPreload)
 		})
 		this.closeTriggers?.forEach((trigger) => {
 			trigger.removeEventListener('click', this.handleCloseClick)
 		})
 		this.closeHideTween?.kill()
+		this.cancelScheduledEntryAnimation()
+		this.entryTimeline?.kill()
 		this.clearSequenceCalls()
 		this.heroSplit?.revert()
 		this.heroTitleSplit?.revert()
 		this.heroLabelSplit?.revert()
+		this.bodyTextSplit?.revert()
 		this.openContentTimeline?.kill()
 		this.openContentSplit?.revert()
 		this.clearSelection({ animateContent: false, deferPlane: false })
 
 		this.items.forEach((item) => {
-			item.video.pause()
-			item.video.removeAttribute('src')
-			item.video.load()
-			item.texture.dispose()
+			if (item.video) {
+				item.video.pause()
+				item.video.removeAttribute('src')
+				item.video.load()
+			}
+			item.texture?.dispose()
 			item.material.dispose()
 			item.mesh.geometry.dispose()
 			item.datePlane.geometry.dispose()

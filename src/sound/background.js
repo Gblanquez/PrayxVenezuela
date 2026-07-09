@@ -1,3 +1,5 @@
+import { gsap } from 'gsap'
+
 const audioUrl = 'https://cdn.prod.website-files.com/6a46821c4db8359b8ad81f12/6a4cbbc0aa76c72f5f9b75e5_Tonada%20De%20Luna%20Llena.mp3'
 const triggerSelector = '.sound-trigger'
 const existingIconSelector = 'svg.sound'
@@ -10,6 +12,9 @@ class BackgroundSound {
 		this.triggers = []
 		this.rafId = null
 		this.isPlaying = false
+		this.entryProgress = 0
+		this.entryTween = null
+		this.hasEntered = false
 		this.handleTriggerClick = this.handleTriggerClick.bind(this)
 		this.animate = this.animate.bind(this)
 	}
@@ -46,6 +51,7 @@ class BackgroundSound {
 			trigger.setAttribute('role', trigger.getAttribute('role') || 'button')
 			trigger.setAttribute('aria-pressed', this.isPlaying ? 'true' : 'false')
 			trigger.classList.toggle('is-playing', this.isPlaying)
+			trigger.classList.toggle('is-sound-entered', this.hasEntered)
 			this.ensureCanvas(trigger)
 		})
 	}
@@ -109,6 +115,28 @@ class BackgroundSound {
 		this.drawAll(0)
 	}
 
+	playEntry(delay = 0) {
+		this.entryTween?.kill()
+		this.entryProgress = 0
+		this.hasEntered = false
+		this.triggers.forEach((trigger) => trigger.classList.remove('is-sound-entered'))
+		this.drawAll(0)
+
+		this.entryTween = gsap.to(this, {
+			entryProgress: 1,
+			duration: 1.6,
+			delay,
+			ease: 'power3.out',
+			onUpdate: () => this.drawAll(0),
+			onComplete: () => {
+				this.hasEntered = true
+				this.triggers.forEach((trigger) => trigger.classList.add('is-sound-entered'))
+				this.entryTween = null
+				this.drawAll(0)
+			},
+		})
+	}
+
 	animate(time) {
 		this.drawAll(time)
 		this.rafId = requestAnimationFrame(this.animate)
@@ -136,23 +164,30 @@ class BackgroundSound {
 		context.strokeStyle = color
 		context.translate(center, center)
 
-		if (isPlaying) {
+		if (!this.hasEntered) {
+			this.drawCleanArc(context, scale, this.entryProgress)
+		} else if (isPlaying) {
 			this.drawWavyRing(context, phase, scale)
 		} else {
-			this.drawCleanArc(context, scale)
+			this.drawCleanArc(context, scale, 1)
 		}
 
 		context.restore()
 	}
 
-	drawCleanArc(context, scale) {
+	drawCleanArc(context, scale, progress = 1) {
 		const radius = 8.2 * scale
 		const start = Math.PI * 0.62
 		const end = Math.PI * 2.05
+		const easedProgress = this.easeOutCubic(Math.min(Math.max(progress, 0), 1))
 
 		context.beginPath()
-		context.arc(0, 0, radius, start, end)
+		context.arc(0, 0, radius, start, start + (end - start) * easedProgress)
 		context.stroke()
+	}
+
+	easeOutCubic(value) {
+		return 1 - Math.pow(1 - value, 3)
 	}
 
 	drawWavyRing(context, phase, scale) {
@@ -192,12 +227,17 @@ class BackgroundSound {
 		style.textContent = `
 			${triggerSelector} {
 				animation: pray-sound-spin 7s linear infinite;
+				animation-play-state: paused;
 				cursor: pointer;
 				display: flex;
 				align-items: center;
 				justify-content: center;
 				transform-origin: center;
 				will-change: transform;
+			}
+
+			${triggerSelector}.is-sound-entered {
+				animation-play-state: running;
 			}
 
 			${triggerSelector} .${canvasClass} {

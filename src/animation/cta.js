@@ -1,3 +1,5 @@
+import { gsap } from 'gsap'
+
 const donateLinkSelector = '[data-a="donate-link"]'
 const ctaTextSelector = '[data-a="cta-txt"]'
 const canvasClass = 'cta-canvas'
@@ -12,6 +14,9 @@ class CtaAnimation {
 		this.hoverStates = new Map()
 		this.rafId = null
 		this.startTime = 0
+		this.entryProgress = 0
+		this.entryTween = null
+		this.hasEntered = false
 		this.handlePointerEnter = this.handlePointerEnter.bind(this)
 		this.handlePointerLeave = this.handlePointerLeave.bind(this)
 		this.animate = this.animate.bind(this)
@@ -151,7 +156,12 @@ class CtaAnimation {
 		context.lineCap = 'round'
 		context.lineJoin = 'round'
 
-		this.drawBaseShape(context, baseColor, dprScale)
+		this.drawBaseShape(context, baseColor, dprScale, this.entryProgress)
+
+		if (!this.hasEntered) {
+			context.restore()
+			return
+		}
 
 		const loopTime = Math.max(0, time - (hoverState?.loopRestartTime || 0))
 		const loopProgress = (loopTime % cycle) / cycle
@@ -164,17 +174,40 @@ class CtaAnimation {
 		context.restore()
 	}
 
-	drawBaseShape(context, color, scale) {
+	playEntry(delay = 0) {
+		this.entryTween?.kill()
+		this.hasEntered = false
+		this.entryProgress = 0
+
+		this.entryTween = gsap.to(this, {
+			entryProgress: 1,
+			duration: 1.6,
+			delay,
+			ease: 'power3.out',
+			onComplete: () => {
+				this.hasEntered = true
+				this.startTime = performance.now()
+				this.entryTween = null
+			},
+		})
+	}
+
+	drawBaseShape(context, color, scale, progress = 1) {
 		const y = 2 * scale
 		const centerX = 54.75 * scale
+		const leftProgress = this.easeOutCubic(clamp(progress / 0.96, 0, 1))
+		const rightProgress = this.easeOutCubic(clamp((progress - 0.02) / 0.96, 0, 1))
+		const verticalProgress = this.easeOutCubic(clamp((progress - 0.04) / 0.96, 0, 1))
 
 		context.globalAlpha = 1
 		context.strokeStyle = color
 		context.beginPath()
 		context.moveTo(0, y)
-		context.lineTo(109.5 * scale, y)
-		context.moveTo(centerX, y)
-		context.lineTo(centerX, 40 * scale)
+		context.lineTo(centerX * leftProgress, y)
+		context.moveTo(109.5 * scale, y)
+		context.lineTo(109.5 * scale + (centerX - 109.5 * scale) * rightProgress, y)
+		context.moveTo(centerX, 40 * scale)
+		context.lineTo(centerX, 40 * scale + (y - 40 * scale) * verticalProgress)
 		context.stroke()
 		context.globalAlpha = 1
 	}

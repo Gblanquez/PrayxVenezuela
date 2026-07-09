@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
 import GUI from 'lil-gui'
 import AboutTimeline from '../about/aboutTimeline'
+import assetCoordinator from '../assets/assetCoordinator'
 import { createRagingSeaMaterial } from './materials/ragingSeaMaterial'
 import prayModelUrl from '../static/pray.glb?url'
 
@@ -528,14 +529,16 @@ class PrayScene {
 			scene: this.scene,
 			camera: this.camera,
 			wrapper: this.wrapper,
+			assetCoordinator,
 		})
 	}
 
 	setupLoader() {
-		this.loader = new GLTFLoader()
-		this.dracoLoader = new DRACOLoader()
+		this.loader = new GLTFLoader(assetCoordinator.getLoadingManager())
+		this.dracoLoader = new DRACOLoader(assetCoordinator.getLoadingManager())
 		this.dracoLoader.setDecoderPath(dracoDecoderUrl)
 		this.loader.setDRACOLoader(this.dracoLoader)
+		assetCoordinator.scheduleAboutPreload(3000)
 	}
 
 	isDebugMode() {
@@ -2393,6 +2396,7 @@ diffuseColor.a *= prayDissolveOpacity;
 		})
 		this.volumetricMaterial?.dispose()
 		this.volumetricTexture?.dispose()
+		assetCoordinator.dispose()
 		this.voidBackdrop?.geometry?.dispose()
 		this.voidBackdropMaterial?.dispose()
 		this.volumetricSpotLight = null
