@@ -10,6 +10,9 @@ const planeHeight = 0.59
 const closeTriggerSelector = '.about-close-trigger'
 const closeCanvasClass = 'about-close-canvas'
 const closeStyleId = 'pray-about-close-styles'
+const expandOpenLerp = 0.019
+const expandCloseLerp = 0.036
+const expandCloseDelay = 0.22
 
 class AboutTimeline {
 	constructor() {
@@ -909,6 +912,7 @@ class AboutTimeline {
 				datePlane,
 				index,
 				expandProgress: 0,
+				expandCloseHold: 0,
 				introProgress: 0,
 				isVideoPrepared: false,
 			}
@@ -1196,8 +1200,11 @@ class AboutTimeline {
 			const centerFade = 1 - THREE.MathUtils.smoothstep(Math.abs(loopedZ), travelLength * 0.28, travelLength * 0.5)
 			const worldZ = loopedZ - 8.5
 			const nearFade = THREE.MathUtils.smoothstep(-1.15, -2.75, worldZ)
-			const targetExpand = this.selectedItem === item ? 1 : 0
-			item.expandProgress += (targetExpand - item.expandProgress) * 0.019
+			const isSelected = this.selectedItem === item
+			const targetExpand = isSelected || item.expandCloseHold > 0 ? 1 : 0
+			item.expandCloseHold = Math.max(0, item.expandCloseHold - (1 / 60))
+			const expandLerp = targetExpand > item.expandProgress ? expandOpenLerp : expandCloseLerp
+			item.expandProgress += (targetExpand - item.expandProgress) * expandLerp
 			const selectedBoost = item.expandProgress * 0.55
 			const inactiveFade = this.selectedItem && this.selectedItem !== item
 				? 1 - selectedAmount
@@ -1327,16 +1334,14 @@ class AboutTimeline {
 			return
 		}
 
-		const finishSelectionClear = () => {
+		if (animateContent && deferPlane && this.contentOpenWrapper?.innerHTML.trim()) {
 			item.element.classList.remove('is-about-active')
+			item.expandCloseHold = expandCloseDelay
 			if (this.selectedItem === item) {
 				this.selectedItem = null
 			}
 			this.updateCloseTriggerMode()
-		}
-
-		if (animateContent && deferPlane && this.contentOpenWrapper?.innerHTML.trim()) {
-			this.hideOpenContent(true, finishSelectionClear)
+			this.hideOpenContent(true)
 			return
 		}
 
@@ -1393,18 +1398,18 @@ class AboutTimeline {
 		if (targets.length) {
 			this.openContentTimeline.to(targets, {
 				y: '-110%',
-				duration: 0.8,
+				duration: 0.48,
 				ease: 'power3.in',
-				stagger: 0.015,
+				stagger: 0.01,
 			}, 0)
 		}
 
 		if (line) {
 			this.openContentTimeline.to(line, {
 				scaleX: 0,
-				duration: 0.7,
+				duration: 0.42,
 				ease: 'power3.inOut',
-			}, 0.04)
+			}, 0.03)
 		}
 	}
 
