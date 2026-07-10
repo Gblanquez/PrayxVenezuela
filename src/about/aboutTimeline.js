@@ -10,6 +10,15 @@ const planeHeight = 0.59
 const closeTriggerSelector = '.about-close-trigger'
 const closeCanvasClass = 'about-close-canvas'
 const closeStyleId = 'pray-about-close-styles'
+const raycastBlockerSelector = [
+	closeTriggerSelector,
+	'.sound-trigger',
+	'.content-open-wrapper',
+	'[data-raycast-blocker]',
+	'[data-a="donate-link"]',
+	'a',
+	'button',
+].join(', ')
 const expandOpenLerp = 0.019
 const expandCloseLerp = 0.036
 const expandCloseDelay = 0.22
@@ -1296,6 +1305,7 @@ class AboutTimeline {
 
 	handlePointerDown(event) {
 		if (!this.isEnabled || !this.group?.visible || !this.wrapper || !this.camera) return
+		if (this.isRaycastBlocked(event)) return
 
 		const rect = this.wrapper.getBoundingClientRect()
 		this.pointer.set(
@@ -1310,6 +1320,11 @@ class AboutTimeline {
 		if (typeof selectedIndex !== 'number') return
 
 		this.selectItem(this.items[selectedIndex])
+	}
+
+	isRaycastBlocked(event) {
+		const target = event.target
+		return target instanceof Element && Boolean(target.closest(raycastBlockerSelector))
 	}
 
 	selectItem(item) {
