@@ -10,8 +10,10 @@ const planeHeight = 0.59
 const closeTriggerSelector = '.about-close-trigger'
 const closeCanvasClass = 'about-close-canvas'
 const closeStyleId = 'pray-about-close-styles'
+const scrollCueSelector = '.scroll-line-wrapper'
 const raycastBlockerSelector = [
 	closeTriggerSelector,
+	scrollCueSelector,
 	'.sound-trigger',
 	'.content-open-wrapper',
 	'[data-raycast-blocker]',
@@ -55,6 +57,10 @@ class AboutTimeline {
 		this.entryStartFrames = []
 		this.openContentSplit = null
 		this.openContentTimeline = null
+		this.scrollCueWrapper = null
+		this.scrollCueSplit = null
+		this.scrollCueTimeline = null
+		this.scrollCueVisible = false
 		this.isEnabled = false
 		this.visualsEnabled = false
 		this.closeHideTween = null
@@ -89,6 +95,7 @@ class AboutTimeline {
 		this.scene.add(this.group)
 
 		this.injectCloseStyles()
+		this.setupScrollCue()
 		this.hideOpenContent()
 		this.createItems()
 		this.setupTriggers()
@@ -128,6 +135,98 @@ class AboutTimeline {
 		})
 	}
 
+	setupScrollCue() {
+		this.scrollCueWrapper = document.querySelector(scrollCueSelector)
+		if (!this.scrollCueWrapper) return
+
+		const textTargets = Array.from(this.scrollCueWrapper.querySelectorAll('[scroll="txt"]'))
+		if (textTargets.length) {
+			this.scrollCueSplit = SplitText.create(textTargets, {
+				type: 'words,chars',
+				wordsClass: 'scroll-cue-word',
+				charsClass: 'scroll-cue-char',
+			})
+
+			gsap.set(this.scrollCueSplit.words, {
+				display: 'inline-block',
+				whiteSpace: 'nowrap',
+			})
+
+			gsap.set(this.scrollCueSplit.chars, {
+				display: 'inline-block',
+				x: (index) => (index % 2 === 0 ? '-42%' : '42%'),
+				opacity: 0,
+				willChange: 'transform, opacity',
+				force3D: true,
+			})
+		}
+
+		this.scrollCueWrapper.style.display = 'none'
+		this.scrollCueWrapper.style.pointerEvents = 'none'
+	}
+
+	showScrollCue() {
+		if (!this.scrollCueWrapper || this.selectedItem) return
+
+		this.scrollCueTimeline?.kill()
+		this.scrollCueVisible = true
+		this.scrollCueWrapper.style.display = 'flex'
+		this.scrollCueWrapper.style.pointerEvents = 'none'
+		gsap.set(this.scrollCueWrapper, { autoAlpha: 1 })
+
+		if (this.scrollCueSplit?.chars?.length) {
+			gsap.set(this.scrollCueSplit.chars, {
+				x: (index) => (index % 2 === 0 ? '-42%' : '42%'),
+				opacity: 0,
+			})
+		}
+
+		this.scrollCueTimeline = gsap.timeline({
+			onComplete: () => {
+				this.scrollCueTimeline = null
+			},
+		})
+
+		if (this.scrollCueSplit?.chars?.length) {
+			this.scrollCueTimeline.to(this.scrollCueSplit.chars, {
+				x: '0%',
+				opacity: 1,
+				duration: 1.05,
+				ease: 'power3.out',
+				stagger: 0.006,
+			}, 0)
+		}
+	}
+
+	hideScrollCue({ immediate = false } = {}) {
+		if (!this.scrollCueWrapper) return
+
+		this.scrollCueTimeline?.kill()
+		this.scrollCueVisible = false
+
+		if (immediate) {
+			this.scrollCueWrapper.style.display = 'none'
+			return
+		}
+
+		this.scrollCueTimeline = gsap.timeline({
+			onComplete: () => {
+				this.scrollCueWrapper.style.display = 'none'
+				this.scrollCueTimeline = null
+			},
+		})
+
+		if (this.scrollCueSplit?.chars?.length) {
+			this.scrollCueTimeline.to(this.scrollCueSplit.chars, {
+				x: (index) => (index % 2 === 0 ? '-42%' : '42%'),
+				opacity: 0,
+				duration: 0.42,
+				ease: 'power3.in',
+				stagger: 0.004,
+			}, 0)
+		}
+	}
+
 	handleTriggerClick(event) {
 		event.preventDefault()
 
@@ -150,6 +249,7 @@ class AboutTimeline {
 			this.visualsEnabled = true
 			this.startIntroAnimation()
 			this.showCloseTriggers()
+			this.showScrollCue()
 		})
 		this.clearSelection({ animateContent: false, deferPlane: false })
 		const sectionTop = this.section.getBoundingClientRect().top + window.scrollY
@@ -194,6 +294,7 @@ class AboutTimeline {
 		this.updateAboutTriggerState()
 		this.stopIntroAnimation()
 		this.clearSelection()
+		this.hideScrollCue()
 		heroText.animateIn({
 			bodyDelay: 0,
 			titleDelay: 0,
@@ -1333,6 +1434,7 @@ class AboutTimeline {
 			return
 		}
 
+		this.hideScrollCue()
 		this.clearSelection({ animateContent: false, deferPlane: false })
 		this.selectedItem = item
 		item.element.classList.add('is-about-active')
@@ -1356,7 +1458,7 @@ class AboutTimeline {
 				this.selectedItem = null
 			}
 			this.updateCloseTriggerMode()
-			this.hideOpenContent(true)
+			this.hideOpenContent(true, () => this.showScrollCue())
 			return
 		}
 
@@ -1506,6 +1608,7 @@ class AboutTimeline {
 			trigger.removeEventListener('click', this.handleCloseClick)
 		})
 		this.closeHideTween?.kill()
+		this.hideScrollCue({ immediate: true })
 		this.cancelScheduledEntryAnimation()
 		this.entryTimeline?.kill()
 		this.clearSequenceCalls()
@@ -1513,6 +1616,8 @@ class AboutTimeline {
 		this.heroTitleSplit?.revert()
 		this.heroLabelSplit?.revert()
 		this.bodyTextSplit?.revert()
+		this.scrollCueSplit?.revert()
+		this.scrollCueSplit = null
 		this.openContentTimeline?.kill()
 		this.openContentSplit?.revert()
 		this.clearSelection({ animateContent: false, deferPlane: false })
